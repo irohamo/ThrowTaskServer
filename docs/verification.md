@@ -1,5 +1,11 @@
 # 検証記録
 
+## GitHub公開 — 2026-11-16 JST
+
+公開先は[ToiDoneServer](https://github.com/irohamo/ToiDoneServer)、default branchは`main`です。サーバー・CLI・MCP・共通client・関連文書の履歴を公開対象とし、アプリのソースは含めません。
+
+CIはpushとpull requestで固定済み依存関係のインストール、ruff check/format、pytestを実行します。結果は[GitHub Actions](https://github.com/irohamo/ToiDoneServer/actions/workflows/test.yml)を参照してください。
+
 ## ToiDoneへの改名 — 2026-11-16 JST
 
 | 環境 | 結果 |
@@ -51,6 +57,6 @@ APIのトランザクション競合、UUID作成の冪等性、入力値をエ�
 - iPhone上でのオフライン復旧、Keychain保存、同期設定画面の操作。
 - OS keyringを使うDebian常駐クライアントの接続。今回の実接続テストは明示的な0600資格情報ファイルを使用。
 - systemdの継続運転、HTTPSリバースプロキシ、運用バックアップの配置。
-- GitHub公開、GitHub Actionsでの実行、App Store配布。
+- App Store配布。
 
 MVP全体の受け入れ条件がすべて通過したとは扱いません。

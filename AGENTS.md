@@ -1,5 +1,7 @@
 # ToiDone Server
 
+- 公開先は[https://github.com/irohamo/ToiDoneServer](https://github.com/irohamo/ToiDoneServer)、default branchは`main`。アプリのソースを持ち込まない。
+
 - 製品名はToiDone（トイダン）、公開用リポジトリはToiDoneServer。Python package/moduleと現行コマンドは`toidone`系。旧名は保存データ・資格情報・コマンドの互換性を保つ箇所だけに残す。
 - 個人利用向けのセルフホストToDoを作る。MVPはToDo API、Debian CLI、MCPサーバー、別管理のToiDoneアプリとの接続。MCPはMVPに含める。
 - MVPと受け入れ条件は [docs/mvp.md](docs/mvp.md)、検証結果は [docs/verification.md](docs/verification.md) を参照する。API・CLI・stdio MCPとテストを実装済み。iPhone実機と常駐運用の完了は別に確認する。

@@ -1,5 +1,7 @@
 # ToiDone Server
 
+[GitHub](https://github.com/irohamo/ToiDoneServer) · [CI](https://github.com/irohamo/ToiDoneServer/actions/workflows/test.yml)
+
 **ToiDone（トイダン）**は、当為（なすべきこと）＋Done（完了）。なすべきことを、完了に。
 
 個人利用向けのセルフホストToDo API、Debian CLI、MCPサーバーです。Python 3.12以上、FastAPI、SQLite、公式MCP Python SDKを使います。iOS/macOSアプリのソースは別管理です。
@@ -16,6 +18,8 @@
 [uv](https://docs.astral.sh/uv/getting-started/installation/)とPython 3.12以上を用意し、このディレクトリで実行します。Debian 13のPython 3.13でも検証済みです。
 
 ```bash
+git clone https://github.com/irohamo/ToiDoneServer.git
+cd ToiDoneServer
 uv sync --frozen
 uv run toidone-admin --data-dir ./data init
 mkdir -m 700 .secrets
