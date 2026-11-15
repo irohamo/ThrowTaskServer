@@ -4,4 +4,4 @@ MVPに含むMCP adapterの置き場です。CLIと同じAPIクライアントを
 
 初期transport候補はstdio。認証情報はtoolの引数・結果に含めず、設定した秘密ストアから取得します。
 
-実行可能なMCPサーバーはまだありません。[MVP](../docs/mvp.md)を参照してください。
+[実装](../src/mytodo/mcp_server.py)を参照してください。`uv run mytodo-mcp`でstdio起動します。17 toolsを提供し、CLIと同じ接続設定を使います。依存関係は`uv.lock`で固定しています。

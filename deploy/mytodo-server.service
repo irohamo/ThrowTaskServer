@@ -1,0 +1,23 @@
+[Unit]
+Description=MyToDo API
+After=network.target
+
+[Service]
+Type=simple
+User=mytodo
+Group=mytodo
+WorkingDirectory=/opt/mytodo-server
+ExecStart=/opt/mytodo-server/.venv/bin/mytodo-server --data-dir /var/lib/mytodo --host 127.0.0.1 --port 8766
+StateDirectory=mytodo
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mytodo
+
+[Install]
+WantedBy=multi-user.target

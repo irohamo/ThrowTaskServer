@@ -1,25 +1,86 @@
 # MyToDo Server
 
-個人利用向けのセルフホストToDoサーバーと、Debian CLI・MCPサーバーのリポジトリです。MyToDoアプリと同じデータを操作する構成を目指します。
+個人利用向けのセルフホストToDo API、Debian CLI、MCPサーバーです。Python 3.12以上、FastAPI、SQLite、公式MCP Python SDKを使います。iOS/macOSアプリのソースは別管理です。
 
-現在はリポジトリの雛形とMVP要件を用意した段階です。実行可能なサーバー・CLI・MCPはまだありません。
+- タスク・プロジェクトのCRUD、完了/再開、検索、ページング。
+- 期限なし・手動失効可能な端末別APIキー。サーバーにはキーのハッシュを保存。
+- revisionによる条件付き更新。削除プレビュー、論理削除、復元。
+- チェックリスト、タグ、予定日と締切、Someday、繰り返し。
+- 共通クライアントを使うCLIとstdio MCP（17 tools）。
+- 同期用snapshot/差分API、SQLiteバックアップ/新規保存先への復元。
 
-## 構成
+## セットアップ
 
-| ディレクトリ | 役割 |
-| --- | --- |
-| [server/](server/README.md) | 認証、データ検証、タスク操作、永続化を担当する共通API |
-| [client/](client/README.md) | CLIとMCPで共有するAPIクライアント |
-| [cli/](cli/README.md) | Debianから使うCLIとJSON出力 |
-| [mcp/](mcp/README.md) | AIクライアント向けのMCP adapter |
-| [docs/](docs/mvp.md) | MVP要件と検証項目 |
+[uv](https://docs.astral.sh/uv/getting-started/installation/)とPython 3.12以上を用意し、このディレクトリで実行します。Debian 13のPython 3.13でも検証済みです。
 
-iOS/macOSアプリのソースは別リポジトリで管理します。
+```bash
+uv sync --frozen
+uv run mytodo-admin --data-dir ./data init
+mkdir -m 700 .secrets
+uv run mytodo-admin --data-dir ./data token create debian --output .secrets/debian.credential
+uv run mytodo-server --data-dir ./data
+```
 
-## 最初に通す経路
+サーバーは標準で `127.0.0.1:8766` を待ち受けます。キーは指定した新規ファイルに0600で保存し、画面に出しません。キーと個人データをGitへ追加しないでください。
 
-CLIでタスクを作成し、MCPで完了し、CLIで結果を確認します。同じAPIを通し、認証・入力制約・競合処理を共有します。その後、Debian実環境とiPhoneで双方向反映を検証します。
+別のターミナルでCLIを設定します。設定ファイルには接続先と資格情報ファイルのパスを保存します。
 
-実装言語、DB、認証方式、SDKとAPI契約は設計時に確定します。セットアップ手順とテストコマンドは実行できる実装と合わせて追加します。
+```bash
+uv run mytodo configure --url http://127.0.0.1:8766 --credential-file "$PWD/.secrets/debian.credential"
+uv run mytodo --json auth status
+uv run mytodo tasks create "最初のタスク" --when 2026-11-15 --json
+uv run mytodo tasks list --json
+```
 
-[MVPと完了条件](docs/mvp.md)を参照してください。
+`--credential-file`を省くと、キーを隠し入力してmacOS Keychain / Linux Secret Serviceに保存します。headlessでは、明示的に指定した所有者限定の資格情報ファイルも利用できます。キーそのものをコマンド引数や環境変数で渡す機能はありません。
+
+編集には取得した`revision`を指定します。次のIDは作成結果のUUIDに置き換えます。
+
+```bash
+uv run mytodo tasks get <uuid> --json
+uv run mytodo tasks edit <uuid> --revision 1 --notes "メモ" --json
+uv run mytodo tasks complete <uuid> --revision 2 --json
+uv run mytodo tasks reopen <uuid> --revision 3 --json
+uv run mytodo tasks delete <uuid> --revision 4 --dry-run --json
+uv run mytodo tasks delete <uuid> --revision 4 --confirm --json
+uv run mytodo tasks restore <uuid> --revision 5 --json
+```
+
+CLIはJSON envelope v1を返します。exit 0は成功、1はAPI/認証/競合、2はローカル入力/設定エラーです。作成の結果が不明な場合はエラーの`recordId`を取得して確認します。書き込みと認証失敗を自動再試行しません。
+
+## MCP
+
+同じ設定ファイルを使って起動します。
+
+```bash
+uv run mytodo-mcp
+```
+
+MCPクライアントの設定例です。`/absolute/path/MyToDoServer`を実際の場所に置き換えます。キーは設定に含めません。
+
+```json
+{
+  "mcpServers": {
+    "mytodo": {
+      "command": "/absolute/path/MyToDoServer/.venv/bin/mytodo-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+独自のCLI設定を使う場合は`args`に`["--config", "/absolute/path/config.json"]`を指定します。MCPの標準出力にはプロトコル以外を出しません。
+
+`list_tasks`、`get_task`、`create_task`、`update_task`、`complete_task`、`reopen_task`、`delete_task`、`restore_task`と、プロジェクト操作、認証確認、snapshot/差分取得を提供します。更新には`expected_revision`が必須です。削除はプレビューが既定で、実行には`confirm=true`と`dry_run=false`の両方が必要です。
+
+## 検証
+
+```bash
+uv run ruff check src tests
+uv run ruff format --check src tests
+uv run pytest -q
+```
+
+テストは一時DBと専用UUIDを使います。結合テストは実際のHTTPサーバー、CLIプロセス、公式MCPクライアントとstdioサーバーを起動します。[検証記録](docs/verification.md)に実際の結果を記載します。iPhone実機の双方向反映をこれらのテストで証明したとは扱いません。
+
+[API契約](docs/api.md) · [Debianへの配置とバックアップ](docs/self-hosting.md) · [MVPの進捗](docs/mvp.md)

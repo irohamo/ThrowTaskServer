@@ -34,16 +34,18 @@ MCP client -> MCP adapter -> 共通API client ---------+
 
 実接続・実機・失効・復元の検証結果を、モックテストやビルド成功で代用しません。
 
-## 設計時に確定する事項
+## 採用した構成
 
-- 実装言語、DB、配布方法、API契約とエラー形式。
-- 予定日と締切の区別、project/tag/checklist/繰り返し、既存ローカルデータの移行。
-- 認証方式。継続利用で定期的な対話再認証やキーの手動再設定を避けることを重視します。期限なし・手動失効可能なAPIキーは候補です。
-- MCPの対応クライアント、プロトコルとSDKバージョン。最初のtransport候補はstdioです。
-- 同期、作成結果が不明な場合のUUID確認、オフラインoutbox、削除と復元の扱い。
+- Python 3.12以上、FastAPI、SQLite。API v1とJSON envelope v1。
+- タスクとプロジェクトの共通モデル。予定日・締切・タグ・チェックリスト・Someday・繰り返しに対応。[API契約](api.md)を参照。
+- 期限なし・手動失効可能な端末別APIキー。ハッシュをDBに保存し、要求ごとに失効を確認。
+- 公式MCP Python SDK 2.3.0、stdio transport。共通API clientをCLIと共有。依存関係はuv.lockで固定。
+- snapshotと差分履歴、条件付き更新、tombstone、復元、UUIDによる作成結果確認。
+- アプリ側は永続outbox、再起動後復旧、競合データの保持、Keychain、初回の既存UUID移行を実装。
 
 ## 進捗
 
 - ローカルGitリポジトリとディレクトリ構成を作成。
-- API・CLI・MCP・アプリ同期は未実装。
-- GitHubリポジトリは未作成。
+- API・CLI・MCPを実装し、macOSとDebian実機で16件のテストに成功。
+- 別管理のアプリに接続設定と同期処理を実装。iPhone実機での受け入れは未通過。
+- GitHubリポジトリは未作成。[検証済みと未検証の範囲](verification.md)を参照。
