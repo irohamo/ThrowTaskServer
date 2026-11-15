@@ -1,6 +1,7 @@
-# MyToDo Server
+# ToiDone Server
 
-- 個人利用向けのセルフホストToDoを作る。MVPはToDo API、Debian CLI、MCPサーバー、別管理のMyToDoアプリとの接続。MCPはMVPに含める。
+- 製品名はToiDone（トイダン）、公開用リポジトリはToiDoneServer。Python package/moduleと現行コマンドは`toidone`系。旧名は保存データ・資格情報・コマンドの互換性を保つ箇所だけに残す。
+- 個人利用向けのセルフホストToDoを作る。MVPはToDo API、Debian CLI、MCPサーバー、別管理のToiDoneアプリとの接続。MCPはMVPに含める。
 - MVPと受け入れ条件は [docs/mvp.md](docs/mvp.md)、検証結果は [docs/verification.md](docs/verification.md) を参照する。API・CLI・stdio MCPとテストを実装済み。iPhone実機と常駐運用の完了は別に確認する。
 - セットアップは `uv sync --frozen`、検証は `uv run ruff check src tests`、`uv run ruff format --check src tests`、`uv run pytest -q`。
 - CLIとMCPは同じAPIクライアントを使う。業務ルール、認証、データ検証はAPI側に集約し、CLIやMCPからDBを直接書き換えない。

@@ -9,7 +9,7 @@ from .storage import Database
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Local server administration (never prints API keys)")
+    parser = argparse.ArgumentParser(description="ToiDone server administration (never prints API keys)")
     parser.add_argument("--data-dir", type=Path, default=default_data_dir())
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("init")

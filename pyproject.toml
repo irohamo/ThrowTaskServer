@@ -3,9 +3,9 @@ requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mytodo-server"
+name = "toidone-server"
 version = "0.1.0"
-description = "Self-hosted task API, CLI, and MCP adapter"
+description = "ToiDone self-hosted task API, CLI, and MCP adapter"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -18,10 +18,15 @@ dependencies = [
 ]
 
 [project.scripts]
-mytodo-server = "mytodo.server:main"
-mytodo-admin = "mytodo.admin:main"
-mytodo = "mytodo.cli:main"
-mytodo-mcp = "mytodo.mcp_server:main"
+toidone-server = "toidone.server:main"
+toidone-admin = "toidone.admin:main"
+toidone = "toidone.cli:main"
+toidone-mcp = "toidone.mcp_server:main"
+# Compatibility for existing local CLI/MCP launch configurations.
+mytodo-server = "toidone.server:main"
+mytodo-admin = "toidone.admin:main"
+mytodo = "toidone.cli:main"
+mytodo-mcp = "toidone.mcp_server:main"
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.12,<1"]
@@ -38,7 +43,7 @@ select = ["E", "F", "I", "UP"]
 
 [tool.ruff.lint.isort]
 known-third-party = ["mcp"]
-known-first-party = ["mytodo"]
+known-first-party = ["toidone"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/mytodo"]
+packages = ["src/toidone"]

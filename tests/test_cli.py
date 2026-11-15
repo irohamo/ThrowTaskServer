@@ -8,7 +8,7 @@ def test_missing_local_configuration_has_exit_two(tmp_path):
         [
             sys.executable,
             "-m",
-            "mytodo.cli",
+            "toidone.cli",
             "--config",
             str(tmp_path / "missing"),
             "--json",

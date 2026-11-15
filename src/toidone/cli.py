@@ -20,7 +20,7 @@ class Parser(argparse.ArgumentParser):
 
 
 def parser():
-    root = Parser(description="MyToDo CLI")
+    root = Parser(description="ToiDone CLI")
     root.add_argument("--config", type=Path, default=default_config())
     root.add_argument("--json", action="store_true")
     groups = root.add_subparsers(dest="group", required=True)

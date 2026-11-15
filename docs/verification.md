@@ -1,4 +1,28 @@
-# 検証記録 — 2026-11-15 JST
+# 検証記録
+
+## ToiDoneへの改名 — 2026-11-16 JST
+
+| 環境 | 結果 |
+| --- | --- |
+| macOS / Python 3.12.13 | pytest 19件成功、ruff check/format成功 |
+| Debian 13.7実機 / Python 3.13.5 | pytest 19件成功、ruff check/format成功、新名の4コマンド起動成功 |
+| 実リポジトリの配布設定 | `toidone-server`のwheel/sdistビルド成功、新旧8コマンドの起動成功 |
+
+`toidone` moduleで実HTTP・CLI・stdio MCPの既存結合テストを再実行しました。
+追加3件で旧名の設定探索、DB内のタスクと失効状態の保持、keyringの探索順序を確認しました。
+keyringの探索順序はmockでの検証で、利用者の実Keychainは操作していません。
+Debianでは専用の一時ディレクトリを使い、終了後に削除しました。
+
+アプリ側はToiDone project / schemeでiOSシミュレーター向けとmacOS向けのビルドに成功し、
+生成されたInfo.plistの表示名・製品名・実行名がToiDone、Bundle IDが`com.irohamo.toidone`であることを確認しました。
+macOSは`CODE_SIGNING_ALLOWED=NO`でビルドしています。Swift保存処理と実HTTP同期も再実行し、
+同じUserDefaults domainへ取り込んだ旧snapshotの読込、未送信キュー、破損データ保持を確認しました。
+新Bundle IDはOS上で旧アプリとは別扱いになるため、既存インストールからの自動移行を証明するものではありません。
+新Bundle IDのApple側登録・署名・TestFlightアップロード、iPhone実機検証は未実施です。
+
+以下は改名前の実装検証です。
+
+## 初回実装 — 2026-11-15 JST
 
 ## サーバー・CLI・MCP
 

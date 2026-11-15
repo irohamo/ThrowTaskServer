@@ -13,7 +13,9 @@ from .errors import TodoError
 
 
 def default_config() -> Path:
-    return Path.home() / ".config/mytodo/config.json"
+    current = Path.home() / ".config/toidone/config.json"
+    legacy = Path.home() / ".config/mytodo/config.json"
+    return legacy if not current.exists() and legacy.exists() else current
 
 
 def validate_token(value: str) -> str:
@@ -82,13 +84,20 @@ class Settings:
 
     @property
     def keyring_service(self):
+        return "toidone:" + hashlib.sha256(self.url.encode()).hexdigest()
+
+    @property
+    def legacy_keyring_service(self):
         return "mytodo:" + hashlib.sha256(self.url.encode()).hexdigest()
 
     def credential(self):
         if self.credential_file is not None:
             return read_credential(self.credential_file)
         try:
-            token = keyring_backend().get_password(self.keyring_service, "api")
+            backend = keyring_backend()
+            token = backend.get_password(self.keyring_service, "api")
+            if token is None:
+                token = backend.get_password(self.legacy_keyring_service, "api")
             return validate_token(token or "")
         except Exception:
             raise TodoError("CREDENTIAL_UNAVAILABLE") from None

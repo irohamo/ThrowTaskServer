@@ -28,7 +28,12 @@ def token_digest(token: str) -> str:
 
 class Database:
     def __init__(self, data_dir: Path):
-        self.path = data_dir / "mytodo.sqlite3"
+        current = data_dir / "toidone.sqlite3"
+        legacy = data_dir / "mytodo.sqlite3"
+        # Open an existing database in place so WAL files and issued keys stay together.
+        current_present = current.exists() or current.is_symlink()
+        legacy_present = legacy.exists() or legacy.is_symlink()
+        self.path = legacy if not current_present and legacy_present else current
 
     def initialize(self):
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)

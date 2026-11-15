@@ -19,7 +19,9 @@ from .storage import Database, token_digest
 
 
 def default_data_dir() -> Path:
-    return Path.home() / ".local/share/mytodo-server"
+    current = Path.home() / ".local/share/toidone-server"
+    legacy = Path.home() / ".local/share/mytodo-server"
+    return legacy if not current.exists() and legacy.exists() else current
 
 
 def create_app(data_dir: Path | None = None) -> FastAPI:
@@ -30,7 +32,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         database.initialize()
         yield
 
-    app = FastAPI(title="MyToDo API", version="0.1.0", lifespan=lifespan, redirect_slashes=False)
+    app = FastAPI(title="ToiDone API", version="0.1.0", lifespan=lifespan, redirect_slashes=False)
     bearer = HTTPBearer(auto_error=False)
 
     def authenticate(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]):
@@ -191,7 +193,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MyToDo self-hosted API")
+    parser = argparse.ArgumentParser(description="ToiDone self-hosted API")
     parser.add_argument("--data-dir", type=Path, default=default_data_dir())
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8766)

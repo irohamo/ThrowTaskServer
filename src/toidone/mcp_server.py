@@ -15,7 +15,7 @@ from .models import ProjectCreate, ProjectPatch, TaskCreate, TaskPatch
 
 def build_server(config: Path | None = None):
     server = MCPServer(
-        "MyToDo",
+        "ToiDone",
         log_level="WARNING",
         instructions=(
             "Read a record before editing it and pass its revision as expected_revision. "
@@ -163,7 +163,7 @@ def build_server(config: Path | None = None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MyToDo MCP server (stdio)")
+    parser = argparse.ArgumentParser(description="ToiDone MCP server (stdio)")
     parser.add_argument("--config", type=Path, default=default_config())
     args = parser.parse_args()
     build_server(args.config).run(transport="stdio")

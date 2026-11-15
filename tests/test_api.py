@@ -3,9 +3,9 @@ from uuid import uuid4
 
 import pytest
 
-from mytodo.config import Settings, read_credential
-from mytodo.errors import TodoError
-from mytodo.storage import Database, token_digest
+from toidone.config import Settings, read_credential
+from toidone.errors import TodoError
+from toidone.storage import Database, token_digest
 
 
 def task(client, **fields):

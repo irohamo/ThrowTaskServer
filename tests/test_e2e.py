@@ -13,8 +13,8 @@ import pytest
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters
 
-from mytodo.config import Settings
-from mytodo.storage import Database
+from toidone.config import Settings
+from toidone.storage import Database
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def live_system(tmp_path):
     port = sock.getsockname()[1]
     sock.close()
     process = subprocess.Popen(
-        [sys.executable, "-m", "mytodo.server", "--data-dir", str(tmp_path / "data"), "--port", str(port)],
+        [sys.executable, "-m", "toidone.server", "--data-dir", str(tmp_path / "data"), "--port", str(port)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
     )
@@ -57,7 +57,7 @@ def live_system(tmp_path):
 
 def cli(config, *arguments, expected_exit=0):
     result = subprocess.run(
-        [sys.executable, "-m", "mytodo.cli", "--config", str(config), "--json", *arguments],
+        [sys.executable, "-m", "toidone.cli", "--config", str(config), "--json", *arguments],
         text=True,
         capture_output=True,
         timeout=20,
@@ -75,7 +75,7 @@ def test_cli_mcp_http_workflow_and_revocation(live_system, mode):
     async def exercise():
         parameters = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "mytodo.mcp_server", "--config", str(config)],
+            args=["-m", "toidone.mcp_server", "--config", str(config)],
             env=dict(os.environ),
         )
         async with Client(parameters, mode=mode) as mcp:
@@ -120,7 +120,7 @@ def test_cli_mcp_http_workflow_and_revocation(live_system, mode):
 def test_admin_never_prints_api_key_and_preserves_backup(tmp_path):
     root = tmp_path / "admin"
     credential = tmp_path / "admin-key"
-    base = [sys.executable, "-m", "mytodo.admin", "--data-dir", str(root)]
+    base = [sys.executable, "-m", "toidone.admin", "--data-dir", str(root)]
     result = subprocess.run(
         [*base, "token", "create", "device", "--output", str(credential)],
         capture_output=True,
@@ -137,7 +137,7 @@ def test_admin_never_prints_api_key_and_preserves_backup(tmp_path):
         [
             sys.executable,
             "-m",
-            "mytodo.admin",
+            "toidone.admin",
             "--data-dir",
             str(restored_root),
             "restore",
@@ -149,4 +149,4 @@ def test_admin_never_prints_api_key_and_preserves_backup(tmp_path):
         check=True,
     )
     assert json.loads(restored.stdout)["data"]["restored"]
-    assert (restored_root / "mytodo.sqlite3").stat().st_mode & 0o077 == 0
+    assert (restored_root / "toidone.sqlite3").stat().st_mode & 0o077 == 0
