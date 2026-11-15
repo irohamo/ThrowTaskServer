@@ -1,0 +1,39 @@
+# Local secrets and configuration
+.env
+.env.*
+!.env.example
+.secrets/
+credentials.json
+token.json
+*.key
+*.pem
+
+# Runtime data and backups
+data/
+backups/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.log
+
+# Python and tooling
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Local editor and OS files
+.DS_Store
+.idea/
+.vscode/
