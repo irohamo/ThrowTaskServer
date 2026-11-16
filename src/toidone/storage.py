@@ -13,6 +13,8 @@ from .errors import TodoError
 from .models import ProjectCreate, ProjectFields, TaskCreate, TaskFields, parse_model
 from .recurrence import next_occurrence
 
+TASK_DEFAULTS = {"externalID": None, "source": None, "state": "active"}
+
 
 def now() -> str:
     return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
@@ -20,6 +22,15 @@ def now() -> str:
 
 def encode(value) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def fingerprint(body) -> str:
+    # Keep retries of pre-extension creates compatible with their stored fingerprints.
+    value = dict(body)
+    for key, default in TASK_DEFAULTS.items():
+        if value.get(key, default) == default:
+            value.pop(key, None)
+    return hashlib.sha256(encode(value).encode()).hexdigest()
 
 
 def token_digest(token: str) -> str:
@@ -63,6 +74,9 @@ class Database:
                 CREATE TABLE IF NOT EXISTS recurrence_links (
                     parent_id TEXT PRIMARY KEY, child_id TEXT NOT NULL, undone INTEGER NOT NULL DEFAULT 0
                 );
+                CREATE UNIQUE INDEX IF NOT EXISTS task_external_id
+                    ON records(json_extract(body,'$.externalID'))
+                    WHERE kind='task' AND json_extract(body,'$.externalID') IS NOT NULL;
                 PRAGMA user_version=1;
             """)
 
@@ -136,6 +150,7 @@ class Database:
     @staticmethod
     def materialize(row):
         return {
+            **(TASK_DEFAULTS if row["kind"] == "task" else {}),
             **json.loads(row["body"]),
             "id": row["id"],
             "revision": row["revision"],
@@ -170,22 +185,33 @@ class Database:
             except TodoError:
                 raise TodoError("PROJECT_NOT_FOUND", 409) from None
 
+    @staticmethod
+    def _check_external_id(db, kind, body, record_id):
+        if kind == "task" and body.get("externalID") is not None:
+            existing = db.execute(
+                "SELECT id FROM records WHERE kind='task' AND json_extract(body,'$.externalID')=? AND id<>?",
+                (body["externalID"], record_id),
+            ).fetchone()
+            if existing is not None:
+                raise TodoError("EXTERNAL_ID_ALREADY_EXISTS", 409, existingRecordId=existing["id"])
+
     def create(self, digest, kind, value):
         model = parse_model(TaskCreate if kind == "task" else ProjectCreate, value)
         body = model.model_dump(mode="json")
         record_id = body.pop("id")
-        fingerprint = hashlib.sha256(encode(body).encode()).hexdigest()
+        creation_fingerprint = fingerprint(body)
         with self.transaction(digest, write=True) as db:
             existing = db.execute("SELECT * FROM records WHERE kind=? AND id=?", (kind, record_id)).fetchone()
             if existing is not None:
-                if existing["fingerprint"] != fingerprint or existing["deleted_at"] is not None:
+                if existing["fingerprint"] != creation_fingerprint or existing["deleted_at"] is not None:
                     raise TodoError("ID_ALREADY_EXISTS", 409, recordId=record_id)
                 return self.materialize(existing)
             self._check_project(db, kind, body)
+            self._check_external_id(db, kind, body, record_id)
             timestamp = now()
             db.execute(
                 "INSERT INTO records VALUES (?,?,1,?,?,?,NULL,?)",
-                (kind, record_id, encode(body), timestamp, timestamp, fingerprint),
+                (kind, record_id, encode(body), timestamp, timestamp, creation_fingerprint),
             )
             return self._emit(db, kind, record_id)
 
@@ -200,6 +226,9 @@ class Database:
         *,
         query="",
         status="all",
+        state=None,
+        external_id=None,
+        source=None,
         project_id=None,
         after="",
         limit=100,
@@ -216,6 +245,12 @@ class Database:
                     continue
                 if kind == "task":
                     if status != "all" and record["isCompleted"] != (status == "completed"):
+                        continue
+                    if state is not None and record["state"] != state:
+                        continue
+                    if external_id is not None and record["externalID"] != external_id:
+                        continue
+                    if source is not None and record["source"] != source:
                         continue
                     if project_id is not None and record["projectID"] != project_id:
                         continue
@@ -237,6 +272,7 @@ class Database:
             model = parse_model(TaskFields if kind == "task" else ProjectFields, body)
             body = model.model_dump(mode="json")
             self._check_project(db, kind, body)
+            self._check_external_id(db, kind, body, record_id)
             if encode(body) == row["body"]:
                 return self.materialize(row)
             db.execute(
@@ -283,10 +319,10 @@ class Database:
             raise TodoError("RECURRENCE_RANGE_EXCEEDED", 409) from None
         child_id = str(uuid4())
         timestamp = now()
-        fingerprint = hashlib.sha256(encode(following).encode()).hexdigest()
+        creation_fingerprint = fingerprint(following)
         db.execute(
             "INSERT INTO records VALUES ('task',?,1,?,?,?,NULL,?)",
-            (child_id, encode(following), timestamp, timestamp, fingerprint),
+            (child_id, encode(following), timestamp, timestamp, creation_fingerprint),
         )
         db.execute(
             "INSERT INTO recurrence_links VALUES (?,?,0) ON CONFLICT(parent_id) "
@@ -358,20 +394,33 @@ class Database:
             cursor = db.execute("SELECT COALESCE(MAX(seq),0) FROM changes").fetchone()[0]
             return {"records": records, "cursor": cursor}
 
-    def changes(self, digest, after, limit):
+    def changes(self, digest, after, limit, *, since=None):
+        since_utc = (
+            since.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z") if since else None
+        )
         with self.transaction(digest) as db:
             latest = db.execute("SELECT COALESCE(MAX(seq),0) FROM changes").fetchone()[0]
             if after > latest:
                 raise TodoError("CURSOR_INVALID", 409)
             rows = db.execute(
-                "SELECT * FROM changes WHERE seq>? ORDER BY seq LIMIT ?", (after, limit + 1)
+                "SELECT * FROM changes WHERE seq>? AND (? IS NULL OR json_extract(record,'$.updatedAt')>=?) "
+                "ORDER BY seq LIMIT ?",
+                (after, since_utc, since_utc, limit + 1),
             ).fetchall()
             page = rows[:limit]
             return {
                 "items": [
-                    {"cursor": r["seq"], "kind": r["kind"], "record": json.loads(r["record"])} for r in page
+                    {
+                        "cursor": r["seq"],
+                        "kind": r["kind"],
+                        "record": {
+                            **(TASK_DEFAULTS if r["kind"] == "task" else {}),
+                            **json.loads(r["record"]),
+                        },
+                    }
+                    for r in page
                 ],
-                "cursor": page[-1]["seq"] if page else after,
+                "cursor": page[-1]["seq"] if len(rows) > limit else latest,
                 "hasMore": len(rows) > limit,
                 "latestCursor": latest,
             }

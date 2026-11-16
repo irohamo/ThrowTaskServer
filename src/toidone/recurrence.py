@@ -30,6 +30,8 @@ def next_occurrence(body: dict, today: date) -> dict | None:
         return None
     result = deepcopy(body)
     result["isCompleted"] = False
+    # An occurrence is a new task, not another import of the same external object.
+    result["externalID"] = None
     result["sortOrder"] = min(body["sortOrder"] + 1, 2**53 - 1)
     for item in result["checklist"]:
         item["isCompleted"] = False

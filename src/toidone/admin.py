@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from uuid import UUID
 
+from . import __version__
 from .errors import TodoError, success
 from .server import default_data_dir
 from .storage import Database
@@ -10,6 +11,7 @@ from .storage import Database
 
 def main():
     parser = argparse.ArgumentParser(description="ToiDone server administration (never prints API keys)")
+    parser.add_argument("--version", action="version", version=f"ToiDone {__version__}")
     parser.add_argument("--data-dir", type=Path, default=default_data_dir())
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("init")

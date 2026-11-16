@@ -10,11 +10,21 @@ from fastapi import Depends, FastAPI, Header, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import ValidationError
+from pydantic import AwareDatetime, ValidationError
 from starlette.exceptions import HTTPException
 
+from . import __version__
 from .errors import TodoError, success
-from .models import ProjectCreate, ProjectPatch, TaskCreate, TaskPatch, revision_from_header
+from .models import (
+    ExternalID,
+    ProjectCreate,
+    ProjectPatch,
+    Source,
+    TaskCreate,
+    TaskPatch,
+    TaskState,
+    revision_from_header,
+)
 from .storage import Database, token_digest
 
 
@@ -32,7 +42,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         database.initialize()
         yield
 
-    app = FastAPI(title="ToiDone API", version="0.1.0", lifespan=lifespan, redirect_slashes=False)
+    app = FastAPI(title="ToiDone API", version=__version__, lifespan=lifespan, redirect_slashes=False)
     bearer = HTTPBearer(auto_error=False)
 
     def authenticate(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]):
@@ -82,7 +92,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @app.get("/healthz")
     def health():
-        return success({"status": "ok"})
+        return success({"status": "ok", "version": __version__})
 
     @app.get("/v1/auth/status")
     def auth_status(auth: Auth):
@@ -94,15 +104,21 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @app.get("/v1/changes")
     def changes(
-        auth: Auth, after: Annotated[int, Query(ge=0)] = 0, limit: Annotated[int, Query(ge=1, le=500)] = 100
+        auth: Auth,
+        after: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        since: AwareDatetime | None = None,
     ):
-        return success(database.changes(auth, after, limit))
+        return success(database.changes(auth, after, limit, since=since))
 
     @app.get("/v1/tasks")
     def list_tasks(
         auth: Auth,
         q: Annotated[str, Query(max_length=500)] = "",
         status: Literal["all", "open", "completed"] = "all",
+        state: TaskState | None = None,
+        external_id: ExternalID | None = None,
+        source: Source | None = None,
         project_id: UUID | None = None,
         after: UUID | None = None,
         limit: Annotated[int, Query(ge=1, le=500)] = 100,
@@ -114,6 +130,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 "task",
                 query=q,
                 status=status,
+                state=state,
+                external_id=external_id,
+                source=source,
                 project_id=str(project_id) if project_id else None,
                 after=str(after) if after else "",
                 limit=limit,
@@ -194,6 +213,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
 def main():
     parser = argparse.ArgumentParser(description="ToiDone self-hosted API")
+    parser.add_argument("--version", action="version", version=f"ToiDone {__version__}")
     parser.add_argument("--data-dir", type=Path, default=default_data_dir())
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8766)

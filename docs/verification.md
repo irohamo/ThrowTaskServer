@@ -1,5 +1,26 @@
 # 検証記録
 
+## バージョンアップ方法 — 2026-11-16 JST
+
+- macOS / Python 3.12で全52件のpytest、ruff check/formatに成功。
+- 0.2.0の更新ツールと手順を追加し、公開タグを`v0.2.0`とする。タグが指すcommitの[CI結果](https://github.com/irohamo/ToiDoneServer/actions/workflows/test.yml)を確認してから常駐APIへ適用する。常駐APIの更新は別途実施する。
+- macOSの一時Git/SQLiteとサービス境界のfakeで、計画のみ・未保存変更の拒否・パスの別名・更新成功・各段階の失敗・DBを自動復元しない動作を確認。旧0.1系への適用は停止前に拒否する。
+- 追加の一時環境で0.1.0→0.2.0を実行。実際のuv・Git・SQLite backup/restore・HTTP API・CLI・stdio MCPで、停止時バックアップ、起動版の確認、taskのrevision、キーと失効状態、CLI設定の保持とMCP再接続に成功。systemdとOSユーザー切り替えだけは検証プロセス用adapterに置き換えた。
+- hp-i3 / Debian上では標準ライブラリだけの更新プログラムで計画表示を実行し、稼働中のサービス・パス・配置commitを正しく取得した。`applied=false`で、稼働中のソース・DB・サービスは変更していない。
+- `--version`の4コマンド、API/OpenAPI/package/lockの版の一致を確認。`uv lock --offline --check`成功。
+
+実systemdでの切り替え、Debianでの依存更新、iPhone実機は別途確認する。[更新と復旧手順](upgrading.md)。
+
+## bot向け設定・識別・状態・時刻差分 — 2026-11-16 JST
+
+- macOS上でpytest 38件成功、ruff check/format成功。
+- 一時DBの実HTTP API・CLIプロセス・公式MCP SDKのstdioクライアント（auto/legacy両方式）で、チェックリストと繰り返しの設定・更新、外部IDの重複拒否と既存IDの返却、状態の設定・検索、since差分のページングを確認。
+- 同じ外部IDの同時作成、条件付きの外部ID変更・消去、削除済みIDの予約、次回タスクの外部ID消去、既存DB・旧作成fingerprintの互換性を確認。
+- 同じ時刻の境界を含む差分、UTC offset正規化、削除履歴、空の差分からのcursor再開を確認。
+- 別管理のSwift保存・同期コードから実HTTP APIへ接続し、新フィールドの再起動後保持、アプリ編集後の保持、待ち状態のToday除外と通常状態への復帰を確認。利用者のKeychain、既存DB、常駐サービスは操作していない。
+
+この変更のDebianでの実測、常駐APIへの配置、iPhone実機での確認は未実施。以前の版のDebian検証結果を今回の証拠には使わない。[利用例](bots.md)。
+
 ## GitHub公開 — 2026-11-16 JST
 
 公開先は[ToiDoneServer](https://github.com/irohamo/ToiDoneServer)、default branchは`main`です。サーバー・CLI・MCP・共通client・関連文書の履歴を公開対象とし、アプリのソースは含めません。

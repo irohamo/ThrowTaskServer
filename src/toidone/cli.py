@@ -3,10 +3,11 @@ import json
 import sys
 from getpass import getpass
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
+from . import __version__
 from .client import ApiClient
 from .config import Settings, default_config, keyring_backend, validate_token
 from .errors import TodoError, success
@@ -21,6 +22,7 @@ class Parser(argparse.ArgumentParser):
 
 def parser():
     root = Parser(description="ToiDone CLI")
+    root.add_argument("--version", action="version", version=f"ToiDone {__version__}")
     root.add_argument("--config", type=Path, default=default_config())
     root.add_argument("--json", action="store_true")
     groups = root.add_subparsers(dest="group", required=True)
@@ -34,6 +36,8 @@ def parser():
     changes = groups.add_parser("changes")
     changes.add_argument("--after", type=int, default=0)
     changes.add_argument("--limit", type=int, default=100)
+    changes.add_argument("--since", help="ISO 8601 timestamp with UTC offset; boundary is inclusive")
+    changes.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     for kind in ("tasks", "projects"):
         actions = groups.add_parser(kind).add_subparsers(dest="action", required=True)
         listing = actions.add_parser("list")
@@ -44,6 +48,9 @@ def parser():
         if kind == "tasks":
             listing.add_argument("--status", choices=("all", "open", "completed"), default="all")
             listing.add_argument("--project", type=UUID)
+            listing.add_argument("--state", choices=("active", "waiting", "blocked"))
+            listing.add_argument("--external-id")
+            listing.add_argument("--source")
         create = actions.add_parser("create")
         create.add_argument("title", nargs="?")
         create.add_argument("--id", type=UUID)
@@ -69,6 +76,9 @@ def parser():
                 "scheduledRepeat",
                 "deadlineRepeat",
                 "notes",
+                "externalID",
+                "source",
+                "checklist",
             ),
         )
         if kind == "tasks":
@@ -78,6 +88,15 @@ def parser():
                 command.add_argument("--project", type=UUID)
                 command.add_argument("--tag", action="append")
                 command.add_argument("--someday", action=argparse.BooleanOptionalAction, default=None)
+                command.add_argument("--state", choices=("active", "waiting", "blocked"))
+                command.add_argument("--external-id")
+                command.add_argument("--source")
+                command.add_argument(
+                    "--checklist-item", action="append", help="Replace checklist; repeat per item"
+                )
+                command.add_argument("--repeat", choices=("day", "week", "month", "year"))
+                command.add_argument("--repeat-interval", type=int)
+                command.add_argument("--repeat-anchor")
         get = actions.add_parser("get")
         get.add_argument("id", type=UUID)
         get.add_argument("--include-deleted", action="store_true")
@@ -108,12 +127,29 @@ def fields(args):
         ("project", "projectID"),
         ("tag", "tags"),
         ("someday", "isSomeday"),
+        ("state", "state"),
+        ("external_id", "externalID"),
+        ("source", "source"),
     ):
         content = getattr(args, option, None)
         if content is not None:
             value[key] = str(content) if isinstance(content, UUID) else content
+    if getattr(args, "checklist_item", None) is not None:
+        value["checklist"] = [{"id": str(uuid4()), "title": title} for title in args.checklist_item]
+    if getattr(args, "repeat", None) is not None:
+        value["sharedRepeat"] = {
+            "unit": args.repeat,
+            "interval": args.repeat_interval if args.repeat_interval is not None else 1,
+        }
+        if args.repeat_anchor is not None:
+            value["sharedRepeat"]["anchorDay"] = args.repeat_anchor
+        value.update(usesSeparateRepeats=False, scheduledRepeat=None, deadlineRepeat=None)
+    elif (
+        getattr(args, "repeat_interval", None) is not None or getattr(args, "repeat_anchor", None) is not None
+    ):
+        raise TodoError("VALIDATION_ERROR")
     for key in getattr(args, "clear", []):
-        value[key] = "" if key == "notes" and args.group == "tasks" else None
+        value[key] = [] if key == "checklist" else "" if key == "notes" and args.group == "tasks" else None
     if args.action == "create" and args.id:
         value["id"] = str(args.id)
     return value
@@ -140,7 +176,7 @@ def execute(args):
     if args.group == "snapshot":
         return client.request("GET", "/v1/snapshot")
     if args.group == "changes":
-        return client.request("GET", "/v1/changes", params={"after": args.after, "limit": args.limit})
+        return client.changes(after=args.after, limit=args.limit, since=args.since)
     kind = args.group
     if args.action == "list":
         return client.list(
@@ -150,6 +186,9 @@ def execute(args):
             limit=args.limit,
             include_deleted=args.include_deleted,
             status=getattr(args, "status", None),
+            state=getattr(args, "state", None),
+            external_id=getattr(args, "external_id", None),
+            source=getattr(args, "source", None),
             project_id=str(args.project) if getattr(args, "project", None) else None,
         )
     if args.action == "get":

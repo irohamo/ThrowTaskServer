@@ -10,8 +10,10 @@
 - 期限なし・手動失効可能な端末別APIキー。サーバーにはキーのハッシュを保存。
 - revisionによる条件付き更新。削除プレビュー、論理削除、復元。
 - チェックリスト、タグ、予定日と締切、Someday、繰り返し。
+- bot用の外部ID重複防止・作成元、待ち/ブロック状態、時刻からの差分取得。[利用例](docs/bots.md)。
 - 共通クライアントを使うCLIとstdio MCP（17 tools）。
 - 同期用snapshot/差分API、SQLiteバックアップ/新規保存先への復元。
+- 指定した版への更新計画・事前検証・停止時バックアップ。[バージョンアップ方法](docs/upgrading.md)。
 
 ## セットアップ
 
@@ -82,14 +84,14 @@ MCPクライアントの設定例です。`/absolute/path/ToiDoneServer`を実�
 ## 検証
 
 ```bash
-uv run ruff check src tests
-uv run ruff format --check src tests
+uv run ruff check src tests deploy
+uv run ruff format --check src tests deploy
 uv run pytest -q
 ```
 
 テストは一時DBと専用UUIDを使います。結合テストは実際のHTTPサーバー、CLIプロセス、公式MCPクライアントとstdioサーバーを起動します。[検証記録](docs/verification.md)に実際の結果を記載します。iPhone実機の双方向反映をこれらのテストで証明したとは扱いません。
 
-[API契約](docs/api.md) · [Debianへの配置とバックアップ](docs/self-hosting.md) · [MVPの進捗](docs/mvp.md)
+[API契約](docs/api.md) · [Debianへの配置とバックアップ](docs/self-hosting.md) · [更新](docs/upgrading.md) · [MVPの進捗](docs/mvp.md)
 
 ## MyToDoからの改名
 

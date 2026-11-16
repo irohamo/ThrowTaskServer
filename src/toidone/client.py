@@ -45,6 +45,11 @@ class ApiClient:
                 details = {}
                 if type(error.get("currentRevision")) is int:
                     details["currentRevision"] = error["currentRevision"]
+                if isinstance(error.get("existingRecordId"), str):
+                    try:
+                        details["existingRecordId"] = str(UUID(error["existingRecordId"]))
+                    except ValueError:
+                        pass
                 if record_id:
                     details["recordId"] = record_id
                 raise TodoError(code, response.status_code, **details)
@@ -54,6 +59,12 @@ class ApiClient:
 
     def list(self, kind="tasks", **params):
         return self.request("GET", f"/v1/{kind}", params={k: v for k, v in params.items() if v is not None})
+
+    def changes(self, *, after=0, limit=100, since=None):
+        params = {"after": after, "limit": limit}
+        if since is not None:
+            params["since"] = since
+        return self.request("GET", "/v1/changes", params=params)
 
     def get(self, kind, record_id, *, include_deleted=False):
         record_id = str(UUID(str(record_id)))

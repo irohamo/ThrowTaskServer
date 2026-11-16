@@ -17,6 +17,9 @@ from pydantic import (
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 Day = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}$")]
+ExternalID = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+Source = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+TaskState = Literal["active", "waiting", "blocked"]
 
 
 class Model(BaseModel):
@@ -59,6 +62,9 @@ class TaskFields(Model):
         default_factory=list, max_length=100
     )
     checklist: list[ChecklistItem] = Field(default_factory=list, max_length=200)
+    externalID: ExternalID | None = None
+    source: Source | None = None
+    state: TaskState = "active"
     isCompleted: StrictBool = False
     isSomeday: StrictBool = False
     sortOrder: StrictInt = Field(default=0, ge=-(2**53 - 1), le=2**53 - 1)
@@ -104,6 +110,9 @@ class TaskPatch(Model):
     projectID: UUID | None = None
     tags: list[str] | None = None
     checklist: list[ChecklistItem] | None = None
+    externalID: ExternalID | None = None
+    source: Source | None = None
+    state: TaskState | None = None
     isCompleted: StrictBool | None = None
     isSomeday: StrictBool | None = None
     sortOrder: StrictInt | None = None

@@ -41,4 +41,6 @@ toidone-admin --data-dir /var/lib/toidone-restored restore --backup /secure/back
 
 ## 検証の範囲
 
+既存の配置を更新する場合は[バージョンアップ方法](upgrading.md)を使います。Gitの版を指定し、事前検証・DBコピーでの初期化確認・停止時バックアップ・依存同期・再起動確認を行います。CLI設定と資格情報の保存先は保持します。
+
 一時環境でのDebian CRUDとMCP接続の成功は、常駐サービス、公開HTTPS、iPhone実機の検証を意味しません。[検証記録](verification.md)に実際に確認した範囲を記載します。

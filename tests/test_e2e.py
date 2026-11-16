@@ -117,6 +117,111 @@ def test_cli_mcp_http_workflow_and_revocation(live_system, mode):
     asyncio.run(exercise())
 
 
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+def test_bot_settings_identity_states_and_since_over_cli_and_mcp(live_system, mode):
+    config, *_ = live_system
+    record = cli(
+        config,
+        "tasks",
+        "create",
+        "Weekly review",
+        "--when",
+        "2090-01-31",
+        "--checklist-item",
+        "Gather notes",
+        "--checklist-item",
+        "Review",
+        "--repeat",
+        "month",
+        "--repeat-interval",
+        "1",
+        "--repeat-anchor",
+        "2090-01-31",
+        "--external-id",
+        "routine:weekly-review",
+        "--source",
+        "planner-bot",
+    )["data"]
+    assert record["sharedRepeat"] == {"unit": "month", "interval": 1, "anchorDay": "2090-01-31"}
+    assert len(record["checklist"]) == 2 and record["source"] == "planner-bot"
+
+    async def exercise():
+        parameters = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "toidone.mcp_server", "--config", str(config)],
+            env=dict(os.environ),
+        )
+        async with Client(parameters, mode=mode) as mcp:
+            tools = {tool.name: tool for tool in (await mcp.list_tools()).tools}
+            create_schema = json.dumps(tools["create_task"].input_schema)
+            assert all(
+                field in create_schema
+                for field in ("checklist", "sharedRepeat", "externalID", "source", "state")
+            )
+            assert "since" in tools["list_changes"].input_schema["properties"]
+            checklist = record["checklist"]
+            checklist[0]["isCompleted"] = True
+            changed = await mcp.call_tool(
+                "update_task",
+                {
+                    "task_id": record["id"],
+                    "expected_revision": 1,
+                    "changes": {"state": "waiting", "checklist": checklist},
+                },
+            )
+            assert not changed.is_error
+            waiting = cli(config, "tasks", "list", "--state", "waiting", "--source", "planner-bot")["data"][
+                "items"
+            ]
+            assert len(waiting) == 1 and waiting[0]["checklist"][0]["id"] == checklist[0]["id"]
+            assert waiting[0]["checklist"][0]["isCompleted"] is True
+            duplicate = await mcp.call_tool(
+                "create_task",
+                {"task": {"title": "Duplicate", "externalID": record["externalID"], "source": "other-bot"}},
+            )
+            assert duplicate.is_error
+            assert duplicate.structured_content["error"]["code"] == "EXTERNAL_ID_ALREADY_EXISTS"
+            assert duplicate.structured_content["error"]["existingRecordId"] == record["id"]
+            lookup = await mcp.call_tool(
+                "list_tasks", {"external_id": record["externalID"], "state": "waiting"}
+            )
+            assert lookup.structured_content["data"]["items"][0]["id"] == record["id"]
+            first = await mcp.call_tool("list_changes", {"since": record["createdAt"], "limit": 1})
+            assert not first.is_error and first.structured_content["data"]["hasMore"]
+            cursor = first.structured_content["data"]["cursor"]
+            last = cli(config, "changes", "--since", record["createdAt"], "--after", str(cursor), "--json")[
+                "data"
+            ]
+            assert not last["hasMore"] and last["items"][0]["record"]["state"] == "waiting"
+            invalid = await mcp.call_tool("list_changes", {"since": "2026-11-16T00:00:00"})
+            assert invalid.is_error and invalid.structured_content["error"]["code"] == "VALIDATION_ERROR"
+            done = await mcp.call_tool("complete_task", {"task_id": record["id"], "expected_revision": 2})
+            assert not done.is_error
+            tasks = cli(config, "tasks", "list")["data"]["items"]
+            child = next(t for t in tasks if t["id"] != record["id"])
+            assert child["scheduledDay"] == "2090-02-28" and child["externalID"] is None
+            assert all(not item["isCompleted"] for item in child["checklist"])
+            blocked = cli(config, "tasks", "edit", child["id"], "--revision", "1", "--state", "blocked")[
+                "data"
+            ]
+            assert blocked["state"] == "blocked"
+            cleared = cli(
+                config,
+                "tasks",
+                "edit",
+                child["id"],
+                "--revision",
+                "2",
+                "--clear",
+                "checklist",
+                "--clear",
+                "sharedRepeat",
+            )["data"]
+            assert cleared["checklist"] == [] and cleared["sharedRepeat"] is None
+
+    asyncio.run(exercise())
+
+
 def test_admin_never_prints_api_key_and_preserves_backup(tmp_path):
     root = tmp_path / "admin"
     credential = tmp_path / "admin-key"
