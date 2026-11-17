@@ -174,14 +174,25 @@ def test_existing_bodies_and_creation_fingerprints_remain_compatible(system):
     with db.transaction(write=True) as connection:
         row = connection.execute("SELECT body FROM records WHERE id=?", (task["id"],)).fetchone()
         legacy = json.loads(row["body"])
-        for key in ("state", "externalID", "source"):
+        for key in ("state", "externalID", "source", "dependencyIDs", "blockReason"):
             legacy.pop(key)
         digest = hashlib.sha256(encode(legacy).encode()).hexdigest()
         connection.execute(
             "UPDATE records SET body=?,fingerprint=? WHERE id=?", (encode(legacy), digest, task["id"])
         )
         legacy_change = {
-            key: value for key, value in task.items() if key not in {"state", "externalID", "source"}
+            key: value
+            for key, value in task.items()
+            if key
+            not in {
+                "state",
+                "externalID",
+                "source",
+                "dependencyIDs",
+                "blockReason",
+                "effectiveState",
+                "blockingDependencyIDs",
+            }
         }
         connection.execute(
             "UPDATE changes SET record=? WHERE record_id=?", (encode(legacy_change), task["id"])

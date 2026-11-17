@@ -79,6 +79,8 @@ def parser():
                 "externalID",
                 "source",
                 "checklist",
+                "dependencyIDs",
+                "blockReason",
             ),
         )
         if kind == "tasks":
@@ -91,6 +93,10 @@ def parser():
                 command.add_argument("--state", choices=("active", "waiting", "blocked"))
                 command.add_argument("--external-id")
                 command.add_argument("--source")
+                command.add_argument(
+                    "--depends-on", type=UUID, action="append", help="Replace prerequisites; repeat per task"
+                )
+                command.add_argument("--block-reason", help="Reason for a manually blocked task")
                 command.add_argument(
                     "--checklist-item", action="append", help="Replace checklist; repeat per item"
                 )
@@ -130,10 +136,13 @@ def fields(args):
         ("state", "state"),
         ("external_id", "externalID"),
         ("source", "source"),
+        ("block_reason", "blockReason"),
     ):
         content = getattr(args, option, None)
         if content is not None:
             value[key] = str(content) if isinstance(content, UUID) else content
+    if getattr(args, "depends_on", None) is not None:
+        value["dependencyIDs"] = [str(identifier) for identifier in args.depends_on]
     if getattr(args, "checklist_item", None) is not None:
         value["checklist"] = [{"id": str(uuid4()), "title": title} for title in args.checklist_item]
     if getattr(args, "repeat", None) is not None:
@@ -149,7 +158,13 @@ def fields(args):
     ):
         raise TodoError("VALIDATION_ERROR")
     for key in getattr(args, "clear", []):
-        value[key] = [] if key == "checklist" else "" if key == "notes" and args.group == "tasks" else None
+        value[key] = (
+            []
+            if key in {"checklist", "dependencyIDs"}
+            else ""
+            if key == "notes" and args.group == "tasks"
+            else None
+        )
     if args.action == "create" and args.id:
         value["id"] = str(args.id)
     return value

@@ -14,7 +14,13 @@ from .identity import ScopedConnection, legacy_owner, migrate, resolve
 from .models import ProjectCreate, ProjectFields, TaskCreate, TaskFields, parse_model
 from .recurrence import next_occurrence
 
-TASK_DEFAULTS = {"externalID": None, "source": None, "state": "active"}
+TASK_DEFAULTS = {
+    "externalID": None,
+    "source": None,
+    "state": "active",
+    "dependencyIDs": [],
+    "blockReason": None,
+}
 
 
 def now() -> str:
@@ -174,6 +180,54 @@ class Database:
         }
 
     @staticmethod
+    def _dependency_lookup(db):
+        return {
+            row["id"]: {**json.loads(row["body"]), "deletedAt": row["deleted_at"]}
+            for row in db.execute(
+                "SELECT id,body,deleted_at FROM records WHERE owner_id=? AND kind='task'",
+                (db.owner_id,),
+            )
+        }
+
+    def _present(self, db, row, lookup=None):
+        record = self.materialize(row)
+        if row["kind"] == "task":
+            lookup = self._dependency_lookup(db) if lookup is None else lookup
+            blocking = [
+                identifier
+                for identifier in record["dependencyIDs"]
+                if identifier not in lookup
+                or lookup[identifier]["deletedAt"] is not None
+                or not lookup[identifier]["isCompleted"]
+            ]
+            record["blockingDependencyIDs"] = blocking
+            record["effectiveState"] = "blocked" if blocking else record["state"]
+        return record
+
+    def _check_dependencies(self, db, kind, record_id, body, previous=None):
+        if kind != "task":
+            return
+        dependencies = body.get("dependencyIDs", [])
+        if record_id in dependencies:
+            raise TodoError("DEPENDENCY_CYCLE", 409)
+        lookup = self._dependency_lookup(db)
+        existing = set((previous or {}).get("dependencyIDs", []))
+        for identifier in set(dependencies) - existing:
+            if identifier not in lookup or lookup[identifier]["deletedAt"] is not None:
+                # Missing, deleted and other-user tasks intentionally share one error.
+                raise TodoError("DEPENDENCY_UNAVAILABLE", 409)
+        graph = {identifier: value.get("dependencyIDs", []) for identifier, value in lookup.items()}
+        graph[record_id] = dependencies
+        pending, visited = list(dependencies), set()
+        while pending:
+            identifier = pending.pop()
+            if identifier == record_id:
+                raise TodoError("DEPENDENCY_CYCLE", 409)
+            if identifier not in visited:
+                visited.add(identifier)
+                pending.extend(graph.get(identifier, []))
+
+    @staticmethod
     def _row(db, kind, record_id, *, include_deleted=False):
         row = db.execute(
             "SELECT * FROM records WHERE owner_id=? AND kind=? AND id=?", (db.owner_id, kind, record_id)
@@ -196,7 +250,7 @@ class Database:
             "INSERT INTO changes(owner_id,owner_seq,kind,record_id,record) VALUES (?,?,?,?,?)",
             (db.owner_id, cursor, kind, record_id, encode(record)),
         )
-        return record
+        return self._present(db, self._row(db, kind, record_id, include_deleted=True))
 
     def _check_project(self, db, kind, body):
         if kind == "task" and body.get("projectID"):
@@ -228,9 +282,10 @@ class Database:
             if existing is not None:
                 if existing["fingerprint"] != creation_fingerprint or existing["deleted_at"] is not None:
                     raise TodoError("ID_ALREADY_EXISTS", 409, recordId=record_id)
-                return self.materialize(existing)
+                return self._present(db, existing)
             self._check_project(db, kind, body)
             self._check_external_id(db, kind, body, record_id)
+            self._check_dependencies(db, kind, record_id, body)
             timestamp = now()
             db.execute(
                 "INSERT INTO records VALUES (?,?,?,1,?,?,?,NULL,?)",
@@ -240,7 +295,7 @@ class Database:
 
     def get(self, digest, kind, record_id, *, include_deleted=False):
         with self.transaction(digest) as db:
-            return self.materialize(self._row(db, kind, record_id, include_deleted=include_deleted))
+            return self._present(db, self._row(db, kind, record_id, include_deleted=include_deleted))
 
     def list(
         self,
@@ -263,8 +318,9 @@ class Database:
                 (db.owner_id, kind, after),
             )
             items = []
+            lookup = self._dependency_lookup(db) if kind == "task" else None
             for row in rows:
-                record = self.materialize(row)
+                record = self._present(db, row, lookup)
                 if record["deletedAt"] and not include_deleted:
                     continue
                 if query.casefold() not in (record["title"] + "\n" + (record.get("notes") or "")).casefold():
@@ -272,7 +328,7 @@ class Database:
                 if kind == "task":
                     if status != "all" and record["isCompleted"] != (status == "completed"):
                         continue
-                    if state is not None and record["state"] != state:
+                    if state is not None and record["effectiveState"] != state:
                         continue
                     if external_id is not None and record["externalID"] != external_id:
                         continue
@@ -299,8 +355,9 @@ class Database:
             body = model.model_dump(mode="json")
             self._check_project(db, kind, body)
             self._check_external_id(db, kind, body, record_id)
+            self._check_dependencies(db, kind, record_id, body, json.loads(row["body"]))
             if encode(body) == row["body"]:
-                return self.materialize(row)
+                return self._present(db, row)
             db.execute(
                 "UPDATE records SET body=?,revision=revision+1,updated_at=? WHERE "
                 "owner_id=? AND kind=? AND id=?",
@@ -383,7 +440,16 @@ class Database:
                     )
                     if json.loads(r["body"]).get("projectID") == record_id
                 ]
-            return {"wouldDelete": self.materialize(row), "detachedTaskIds": detached}
+            result = {"wouldDelete": self._present(db, row), "detachedTaskIds": detached}
+            if kind == "task":
+                result["blockedDependentTaskIDs"] = [
+                    identifier
+                    for identifier, value in self._dependency_lookup(db).items()
+                    if value["deletedAt"] is None
+                    and not value["isCompleted"]
+                    and record_id in value.get("dependencyIDs", [])
+                ]
+            return result
 
     def delete(self, digest, kind, record_id, revision, *, confirm):
         if not confirm:
@@ -418,7 +484,7 @@ class Database:
             row = self._row(db, kind, record_id, include_deleted=True)
             self._check_revision(row, revision)
             if row["deleted_at"] is None:
-                return self.materialize(row)
+                return self._present(db, row)
             self._check_project(db, kind, json.loads(row["body"]))
             db.execute(
                 "UPDATE records SET deleted_at=NULL,updated_at=?,revision=revision+1 WHERE "
@@ -429,8 +495,9 @@ class Database:
 
     def snapshot(self, digest):
         with self.transaction(digest) as db:
+            lookup = self._dependency_lookup(db)
             records = [
-                self.materialize(row) | {"kind": row["kind"]}
+                self._present(db, row, lookup) | {"kind": row["kind"]}
                 for row in db.execute(
                     "SELECT * FROM records WHERE owner_id=? ORDER BY kind,id", (db.owner_id,)
                 )

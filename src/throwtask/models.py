@@ -20,6 +20,7 @@ Day = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}$")]
 ExternalID = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 Source = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 TaskState = Literal["active", "waiting", "blocked"]
+BlockReason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 
 
 class Model(BaseModel):
@@ -65,6 +66,8 @@ class TaskFields(Model):
     externalID: ExternalID | None = None
     source: Source | None = None
     state: TaskState = "active"
+    dependencyIDs: list[UUID] = Field(default_factory=list, max_length=64)
+    blockReason: BlockReason | None = None
     isCompleted: StrictBool = False
     isSomeday: StrictBool = False
     sortOrder: StrictInt = Field(default=0, ge=-(2**53 - 1), le=2**53 - 1)
@@ -78,6 +81,8 @@ class TaskFields(Model):
 
     @model_validator(mode="after")
     def validate_task(self):
+        if len(self.dependencyIDs) != len(set(self.dependencyIDs)):
+            raise ValueError("duplicate dependencies")
         if len(self.tags) != len(set(self.tags)):
             raise ValueError("duplicate tags")
         if len(self.checklist) != len({item.id for item in self.checklist}):
@@ -113,6 +118,8 @@ class TaskPatch(Model):
     externalID: ExternalID | None = None
     source: Source | None = None
     state: TaskState | None = None
+    dependencyIDs: list[UUID] | None = Field(default=None, max_length=64)
+    blockReason: BlockReason | None = None
     isCompleted: StrictBool | None = None
     isSomeday: StrictBool | None = None
     sortOrder: StrictInt | None = None

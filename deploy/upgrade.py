@@ -10,6 +10,7 @@ import pwd
 import re
 import shlex
 import shutil
+import sqlite3
 import subprocess
 import tarfile
 import tempfile
@@ -126,6 +127,27 @@ def plan(args, runner):
         raise UpgradeError("TARGET_COMMAND_UNSUPPORTED")
     if (data / "throwtask.sqlite3").exists() and project["name"] != "throwtask-server":
         raise UpgradeError("TARGET_LAYOUT_UNSUPPORTED")
+    if release is not None and tuple(map(int, release.groups())) < (0, 4, 0):
+        database = next(
+            data / name
+            for name in ("throwtask.sqlite3", "toidone.sqlite3", "mytodo.sqlite3")
+            if (data / name).is_file()
+        )
+        if database.is_symlink():
+            raise UpgradeError("UNSAFE_DATABASE_PATH")
+        with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+            has_records = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='records'"
+            ).fetchone()
+            if (
+                has_records
+                and connection.execute(
+                    "SELECT 1 FROM records WHERE kind='task' AND "
+                    "(json_type(body,'$.dependencyIDs') IS NOT NULL OR "
+                    "json_type(body,'$.blockReason') IS NOT NULL) LIMIT 1"
+                ).fetchone()
+            ):
+                raise UpgradeError("TARGET_DATA_FORMAT_UNSUPPORTED")
     installed_admin = admin_executable(repo)
     return {
         "repository": str(repo),

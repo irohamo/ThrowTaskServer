@@ -57,3 +57,9 @@ DELETEには`confirm=true`も必要です。削除済みレコードは通常の
 次タスクは`source`と状態を引き継ぎ、`externalID`はnullにします。元の外部対象の重複防止は親タスクに残します。[CLI/MCPからの設定例](bots.md)。
 
 MCP/CLI固有の業務ルールはなく、すべて同じAPIを使用します。
+
+## 依存関係（0.4.0以降）
+
+Taskの作成・更新は`dependencyIDs`（UUID配列、最大64件）と`blockReason`（nullable）を受け付ける。読取専用の`effectiveState` / `blockingDependencyIDs`は、同じユーザーの現在の依存先から計算する。`state`検索は実効状態に対する検索で、保存した手動状態は変更しない。[詳細と履歴の扱い](dependencies.md)。
+
+`DEPENDENCY_CYCLE` / `DEPENDENCY_UNAVAILABLE`は409。存在しない・削除済み・他ユーザーの新しい依存先はいずれも`DEPENDENCY_UNAVAILABLE`で返す。既存リンクの保持中に他の項目を編集することは許可する。

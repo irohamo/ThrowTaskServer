@@ -259,3 +259,14 @@ def test_api_and_packaging_versions_match(system):
     assert tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"] == __version__
     lock = tomllib.loads((root / "uv.lock").read_text())
     assert next(p["version"] for p in lock["package"] if p["name"] == "throwtask-server") == __version__
+
+
+def test_dependency_fields_prevent_unsupported_code_downgrade_before_stop(installation):
+    args, repo, data, _, _ = installation
+    with sqlite3.connect(data / "throwtask.sqlite3") as connection:
+        connection.execute("CREATE TABLE records (kind TEXT, body TEXT)")
+        connection.execute("INSERT INTO records VALUES ('task', ?)", (json.dumps({"dependencyIDs": []}),))
+    runner = FakeRunner(repo, data)
+    with pytest.raises(upgrade.UpgradeError, match="TARGET_DATA_FORMAT_UNSUPPORTED"):
+        upgrade.plan(args, runner)
+    assert runner.active and not list((data / "backups").iterdir())

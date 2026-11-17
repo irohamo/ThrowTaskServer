@@ -81,6 +81,8 @@ MCPでは`create_task(task={..., "state":"waiting"})`、`update_task(..., change
 
 別管理のアプリはWaiting/Blockedリストを持ち、待ち/ブロックをToday、Siriの今日一覧、Watch/Widget用の着手可能な一覧から外します。プロジェクトと検索では引き続き確認できます。
 
+依存先の指定と、手動状態を保持した実効状態の計算は[依存関係](dependencies.md)を参照。
+
 ## 4. 時刻以降の変更
 
 ```bash

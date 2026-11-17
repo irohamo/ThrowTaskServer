@@ -27,7 +27,10 @@ def build_server(config: Path | None = None):
             "Use checklist and sharedRepeat (or separate date repeats) on create_task/update_task. "
             "externalID is globally unique; namespace it, for example github:owner/repo#42. "
             "source labels the creating bot; it is metadata, not authenticated identity. "
-            "Use state=active for actionable tasks and waiting/blocked for deferred work. "
+            "dependencyIDs links prerequisites in the same user account; cycles are rejected. "
+            "effectiveState includes unfinished/missing prerequisites; state remains the manual state. "
+            "Use blockReason to explain a manual state=blocked. Clear dependencyIDs with an empty list. "
+            "Use state=active to filter actionable tasks and waiting/blocked for deferred work. "
             "list_changes accepts an inclusive since timestamp with a UTC offset; then save its cursor. "
             "Authentication errors require the user to configure credentials; do not retry them."
         ),
@@ -91,7 +94,7 @@ def build_server(config: Path | None = None):
 
     @server.tool(annotations=write)
     def create_task(task: TaskCreate) -> CallToolResult:
-        """Create a task with checklist/repeat settings, externalID, source and state.
+        """Create a task with prerequisites (dependencyIDs), blockReason, dates and repeat settings.
 
         Dates are YYYY-MM-DD. Retain the UUID if a write result is unknown.
         A duplicate externalID returns EXTERNAL_ID_ALREADY_EXISTS and existingRecordId without writing.
@@ -103,6 +106,8 @@ def build_server(config: Path | None = None):
         """Edit selected fields using the observed revision; null clears nullable fields.
 
         checklist replaces the whole list: retain item IDs when changing completion or order.
+        dependencyIDs replaces the prerequisite list; [] clears it. Cycles and other-user links are rejected.
+        blockReason describes manual state=blocked; finishing prerequisites never clears that state.
         Repeat settings, externalID, source and state use the same API validation as CLI.
         """
         return call(

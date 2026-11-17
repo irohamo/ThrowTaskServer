@@ -255,3 +255,66 @@ def test_admin_never_prints_api_key_and_preserves_backup(tmp_path):
     )
     assert json.loads(restored.stdout)["data"]["restored"]
     assert (restored_root / "throwtask.sqlite3").stat().st_mode & 0o077 == 0
+
+
+def test_dependencies_cross_cli_mcp_and_http(live_system):
+    config, _, _ = live_system
+    first = cli(config, "tasks", "create", "Dependency first")["data"]
+    task = cli(config, "tasks", "create", "Dependency then", "--depends-on", first["id"])["data"]
+    assert task["effectiveState"] == "blocked" and task["state"] == "active"
+    assert task["id"] in {
+        item["id"] for item in cli(config, "tasks", "list", "--state", "blocked")["data"]["items"]
+    }
+
+    async def exercise():
+        parameters = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "throwtask.mcp_server", "--config", str(config)],
+            env=dict(os.environ),
+        )
+        async with Client(parameters, mode="auto") as mcp:
+            schemas = json.dumps([tool.input_schema for tool in (await mcp.list_tools()).tools])
+            assert "dependencyIDs" in schemas and "blockReason" in schemas
+            cycle = await mcp.call_tool(
+                "update_task",
+                {"task_id": first["id"], "expected_revision": 1, "changes": {"dependencyIDs": [task["id"]]}},
+            )
+            assert cycle.is_error and cycle.structured_content["error"]["code"] == "DEPENDENCY_CYCLE"
+            done = await mcp.call_tool("complete_task", {"task_id": first["id"], "expected_revision": 1})
+            assert not done.is_error
+            ready = await mcp.call_tool("get_task", {"task_id": task["id"]})
+            assert not ready.is_error and ready.structured_content["data"]["effectiveState"] == "active"
+
+    asyncio.run(exercise())
+    manual = cli(
+        config,
+        "tasks",
+        "edit",
+        task["id"],
+        "--revision",
+        "1",
+        "--state",
+        "blocked",
+        "--block-reason",
+        "Permissions missing",
+    )["data"]
+    assert manual["effectiveState"] == "blocked" and manual["blockReason"] == "Permissions missing"
+    cleared = cli(
+        config,
+        "tasks",
+        "edit",
+        task["id"],
+        "--revision",
+        str(manual["revision"]),
+        "--clear",
+        "dependencyIDs",
+        "--clear",
+        "blockReason",
+        "--state",
+        "active",
+    )["data"]
+    assert (
+        cleared["dependencyIDs"] == []
+        and cleared["blockReason"] is None
+        and cleared["effectiveState"] == "active"
+    )

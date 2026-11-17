@@ -15,7 +15,7 @@
 最初に公開済みのcommitを取得し、その版の更新プログラムだけを一時ディレクトリへ取り出します。**稼働中のcheckoutを先に切り替えないでください。** 現行のeditableインストールはソース変更の影響を受けます。
 
 ```bash
-upgrade_ref='v0.3.0'
+upgrade_ref='v0.4.0'
 upgrade_uv="$(command -v uv)"
 upgrade_directory="$(mktemp -d)"
 sudo git -C /opt/throwtask-server fetch --tags origin
@@ -92,7 +92,7 @@ throwtask tasks list --limit 1 --json
 
 `DIRTY_WORKTREE`なら利用者の変更を保持して終了します。stash・reset・force checkoutを自動実行しません。`UPGRADE_IN_PROGRESS`なら別の更新が実行中です。同じcommitへの適用は何も変更しません。
 
-自動更新先はhealthで版を返せる0.2.0以降です。0.1系への切り替えは`TARGET_VERSION_UNSUPPORTED`で停止前に拒否し、以下の手動復旧を使います。現在の起動コマンドを提供しない版は`TARGET_COMMAND_UNSUPPORTED`、ThrowTask名のDBを開けない旧配布名の版は`TARGET_LAYOUT_UNSUPPORTED`で拒否します。
+自動更新先はhealthで版を返せる0.2.0以降です。0.1系への切り替えは`TARGET_VERSION_UNSUPPORTED`で停止前に拒否し、以下の手動復旧を使います。現在の起動コマンドを提供しない版は`TARGET_COMMAND_UNSUPPORTED`、ThrowTask名のDBを開けない旧配布名の版は`TARGET_LAYOUT_UNSUPPORTED`で拒否します。依存関係フィールドを保存した後の0.3.x以前への切り替えは`TARGET_DATA_FORMAT_UNSUPPORTED`で停止前に拒否します。
 
 事前検証中の失敗は稼働中のサービスを止めません。停止処理に入った後の失敗ではサービスを停止し、DBとバックアップを保持します。JSONの`serviceStopped=false`なら停止確認に失敗しているので、先に`systemctl status`を確認してください。DBの自動復元や、自動での旧版起動は行いません。起動後の確認中に新しい書き込みが入っている可能性もあるためです。
 
