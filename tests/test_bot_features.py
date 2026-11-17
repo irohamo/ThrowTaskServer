@@ -5,8 +5,8 @@ from uuid import uuid4
 
 import pytest
 
-from toidone.errors import TodoError
-from toidone.storage import encode
+from throwtask.errors import TodoError
+from throwtask.storage import encode
 
 
 def create(client, **fields):
@@ -140,9 +140,9 @@ def test_invalid_bot_fields_are_rejected(system, fields):
 
 def test_since_is_inclusive_normalized_and_pages_equal_timestamps_and_tombstones(system, monkeypatch):
     client, *_ = system
-    monkeypatch.setattr("toidone.storage.now", lambda: "2026-11-15T00:00:00.000000Z")
+    monkeypatch.setattr("throwtask.storage.now", lambda: "2026-11-15T00:00:00.000000Z")
     old = create(client)
-    monkeypatch.setattr("toidone.storage.now", lambda: "2026-11-16T00:00:00.000000Z")
+    monkeypatch.setattr("throwtask.storage.now", lambda: "2026-11-16T00:00:00.000000Z")
     waiting = create(client, state="waiting")
     client.delete("/v1/tasks/" + old["id"], headers={"If-Match": '"1"'}, params={"confirm": True})
     since = "2026-11-16T09:00:00+09:00"

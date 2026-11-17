@@ -1,19 +1,19 @@
 # バージョンアップ
 
-対象はToiDoneServerのAPI・CLI・stdio MCPです。iOS/macOS/Watchアプリは別配布で、先にサーバーを対応版へ更新します。**0.2.0**は`v0.2.0`タグから取得できます。タグが指すcommitの[Tests](https://github.com/irohamo/ToiDoneServer/actions/workflows/test.yml)成功を確認してから進めます。
+対象はThrowTaskServerのAPI・CLI・stdio MCPです。iOS/macOS/Watchアプリは別配布で、先にサーバーを対応版へ更新します。`v0.2.0`は改名前のToiDone版で、改名後のコードを含みません。ThrowTask版はCI成功済みの改名後commit SHAを指定します（改名後のreleaseタグは未作成）。タグが指すcommitの[Tests](https://github.com/irohamo/ThrowTaskServer/actions/workflows/test.yml)成功を確認してから進めます。
 
 ## Debianの常駐サーバー
 
-`/opt/toidone-server`のGit checkoutと`.venv`、`/var/lib/toidone`のDB、[systemd unit](../deploy/toidone-server.service)を使う配置に対応します。Python 3.12以上、git、uv、systemd、runuserが必要です。別の配置は`--repo`/`--data-dir`/`--service`/`--port`で指定できます。設定と異なるサービスや、変更の残ったcheckoutには適用しません。
+`/opt/throwtask-server`のGit checkoutと`.venv`、`/var/lib/throwtask`のDB、[systemd unit](../deploy/throwtask-server.service)を使う配置に対応します。Python 3.12以上、git、uv、systemd、runuserが必要です。別の配置は`--repo`/`--data-dir`/`--service`/`--port`で指定できます。設定と異なるサービスや、変更の残ったcheckoutには適用しません。
 
-最初に、公開済みのタグを取得し、その版の更新プログラムだけを一時ディレクトリへ取り出します。**稼働中のcheckoutを先に切り替えないでください。** 現行のeditableインストールはソース変更の影響を受けます。
+最初に公開済みのcommitを取得し、その版の更新プログラムだけを一時ディレクトリへ取り出します。**稼働中のcheckoutを先に切り替えないでください。** 現行のeditableインストールはソース変更の影響を受けます。
 
 ```bash
-upgrade_ref=v0.2.0
+upgrade_ref='<改名後のCI成功commitの完全SHA>'
 upgrade_uv="$(command -v uv)"
 upgrade_directory="$(mktemp -d)"
-sudo git -C /opt/toidone-server fetch --tags origin
-sudo git -C /opt/toidone-server show "$upgrade_ref:deploy/upgrade.py" > "$upgrade_directory/upgrade.py"
+sudo git -C /opt/throwtask-server fetch --tags origin
+sudo git -C /opt/throwtask-server show "$upgrade_ref:deploy/upgrade.py" > "$upgrade_directory/upgrade.py"
 ```
 
 uvが見つからない場合は[セットアップ](../README.md)に従ってインストールしてから進めます。認証情報を含むURLやAPIキーを引数へ渡す必要はありません。
@@ -44,14 +44,27 @@ sudo /usr/bin/python3 "$upgrade_directory/upgrade.py" \
 
 成功すると`phase=complete`を返します。DBのタスク・revision・差分履歴・キーのハッシュと失効状態を継続して使い、CLIの設定やKeychain/keyringは変更しません。APIキーの再発行や`configure`のやり直しは不要です。`.venv/bin`への既存のCLI/MCPリンクも同じパスを使えます。
 
+### 旧ToiDone名の配置を更新する場合
+
+既存の`/opt/toidone-server`・`/var/lib/toidone`・`toidone-server.service`はそのまま使います。
+上の取得コマンドのGitパスを既存のcheckoutへ置き換え、計画・実行の両方に次を指定します。
+
+```bash
+sudo /usr/bin/python3 "$upgrade_directory/upgrade.py" \
+  --repo /opt/toidone-server --data-dir /var/lib/toidone \
+  --service toidone-server.service --ref "$upgrade_ref" --uv "$upgrade_uv"
+```
+
+計画確認後、同じ指定に`--apply`を加えます。新規パスがなく旧標準配置が存在する場合は自動選択もできますが、独自配置では全項目を明示します。DBファイル・サービスアカウント・既存CLI/MCP起動パスを変更する必要はありません。
+
 ## 更新後の確認
 
 ```bash
-/opt/toidone-server/.venv/bin/toidone --version
-/opt/toidone-server/.venv/bin/toidone-server --version
-/opt/toidone-server/.venv/bin/toidone-mcp --version
-toidone --json auth status
-toidone tasks list --limit 1 --json
+/opt/throwtask-server/.venv/bin/throwtask --version
+/opt/throwtask-server/.venv/bin/throwtask-server --version
+/opt/throwtask-server/.venv/bin/throwtask-mcp --version
+throwtask --json auth status
+throwtask tasks list --limit 1 --json
 ```
 
 `--version`は0.2.0以降で利用できます。APIの`GET /healthz`も`data.version`を返します。envelopeの`version=1`はAPI契約の版で、製品版番号とは別です。
@@ -62,7 +75,7 @@ toidone tasks list --limit 1 --json
 
 ## 失敗した場合
 
-実行ごとにbackup-dir（既定`/var/lib/toidone/backups`）へ次のファイルを残します。バックアップと記録・ログを自動削除しません。
+実行ごとにbackup-dir（既定`/var/lib/throwtask/backups`）へ次のファイルを残します。バックアップと記録・ログを自動削除しません。
 
 | ファイル | 内容 |
 | --- | --- |
@@ -73,7 +86,7 @@ toidone tasks list --limit 1 --json
 
 `DIRTY_WORKTREE`なら利用者の変更を保持して終了します。stash・reset・force checkoutを自動実行しません。`UPGRADE_IN_PROGRESS`なら別の更新が実行中です。同じcommitへの適用は何も変更しません。
 
-自動更新先はhealthで版を返せる0.2.0以降です。0.1系への切り替えは`TARGET_VERSION_UNSUPPORTED`で停止前に拒否し、以下の手動復旧を使います。
+自動更新先はhealthで版を返せる0.2.0以降です。0.1系への切り替えは`TARGET_VERSION_UNSUPPORTED`で停止前に拒否し、以下の手動復旧を使います。現在の起動コマンドを提供しない版は`TARGET_COMMAND_UNSUPPORTED`、ThrowTask名のDBを開けない旧配布名の版は`TARGET_LAYOUT_UNSUPPORTED`で拒否します。
 
 事前検証中の失敗は稼働中のサービスを止めません。停止処理に入った後の失敗ではサービスを停止し、DBとバックアップを保持します。JSONの`serviceStopped=false`なら停止確認に失敗しているので、先に`systemctl status`を確認してください。DBの自動復元や、自動での旧版起動は行いません。起動後の確認中に新しい書き込みが入っている可能性もあるためです。
 
@@ -90,9 +103,9 @@ toidone tasks list --limit 1 --json
 復元コマンドの例です。パスは記録したものに置き換え、空の復元先をサービスユーザー所有で用意します。既存DBへ上書きしません。
 
 ```bash
-sudo install -d -o toidone -g toidone -m 700 /var/lib/toidone-rollback
-sudo -u toidone /opt/toidone-server/.venv/bin/toidone-admin \
-  --data-dir /var/lib/toidone-rollback restore --backup /path/to/upgrade-id-stopped.sqlite3
+sudo install -d -o throwtask -g throwtask -m 700 /var/lib/throwtask-rollback
+sudo -u throwtask /opt/throwtask-server/.venv/bin/throwtask-admin \
+  --data-dir /var/lib/throwtask-rollback restore --backup /path/to/upgrade-id-stopped.sqlite3
 ```
 
 systemdのoverride例です。既存のoverrideがある場合は内容を保持して編集します。
@@ -100,28 +113,30 @@ systemdのoverride例です。既存のoverrideがある場合は内容を保持
 ```ini
 [Service]
 ExecStart=
-ExecStart=/opt/toidone-server/.venv/bin/toidone-server --data-dir /var/lib/toidone-rollback --host 127.0.0.1 --port 8766
-ReadWritePaths=/var/lib/toidone-rollback
+ExecStart=/opt/throwtask-server/.venv/bin/throwtask-server --data-dir /var/lib/throwtask-rollback --host 127.0.0.1 --port 8766
+ReadWritePaths=/var/lib/throwtask-rollback
 ```
 
 ## 別端末に入れたCLI/MCP
 
-サーバーの後に、各端末のcheckoutを同じ公開タグへ合わせます。未コミットの変更があれば先に保存し、設定・資格情報ファイルは残します。
+`upgrade_ref`にはサーバーと同じ完全なcommit SHAを設定します。
+
+サーバーの後に、各端末のcheckoutを同じ検証済みcommitへ合わせます。未コミットの変更があれば先に保存し、設定・資格情報ファイルは残します。
 
 ```bash
 git status --short
 git fetch --tags origin
-git checkout --detach v0.2.0
+git checkout --detach "$upgrade_ref"
 uv sync --frozen --no-dev
-.venv/bin/toidone --version
-.venv/bin/toidone --json auth status
+.venv/bin/throwtask --version
+.venv/bin/throwtask --json auth status
 ```
 
 uv tool/pipなど別の方法で導入した場合は、元の導入方法で同じ版へ更新します。MCPは更新後に再接続します。
 
 ## 公開する側
 
-公開前に`pyproject.toml`と`src/toidone/__init__.py`のversion、`uv.lock`、[変更履歴](../CHANGELOG.md)を揃えます。`uv lock`は既存lockを維持し、依存更新が目的でなければ`--upgrade`を付けません。
+公開前に`pyproject.toml`と`src/throwtask/__init__.py`のversion、`uv.lock`、[変更履歴](../CHANGELOG.md)を揃えます。`uv lock`は既存lockを維持し、依存更新が目的でなければ`--upgrade`を付けません。
 
 ```bash
 uv sync --frozen

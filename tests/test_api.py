@@ -3,9 +3,9 @@ from uuid import uuid4
 
 import pytest
 
-from toidone.config import Settings, read_credential
-from toidone.errors import TodoError
-from toidone.storage import Database, token_digest
+from throwtask.config import Settings, read_credential
+from throwtask.errors import TodoError
+from throwtask.storage import Database, token_digest
 
 
 def task(client, **fields):

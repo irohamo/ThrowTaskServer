@@ -1,6 +1,6 @@
 from datetime import date
 
-from toidone.recurrence import next_day
+from throwtask.recurrence import next_day
 
 
 def test_calendar_anchors():

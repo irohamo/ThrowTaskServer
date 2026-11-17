@@ -3,9 +3,9 @@ requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [project]
-name = "toidone-server"
+name = "throwtask-server"
 version = "0.2.0"
-description = "ToiDone self-hosted task API, CLI, and MCP adapter"
+description = "ThrowTask self-hosted task API, CLI, and MCP adapter"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -18,15 +18,19 @@ dependencies = [
 ]
 
 [project.scripts]
-toidone-server = "toidone.server:main"
-toidone-admin = "toidone.admin:main"
-toidone = "toidone.cli:main"
-toidone-mcp = "toidone.mcp_server:main"
+throwtask-server = "throwtask.server:main"
+throwtask-admin = "throwtask.admin:main"
+throwtask = "throwtask.cli:main"
+throwtask-mcp = "throwtask.mcp_server:main"
 # Compatibility for existing local CLI/MCP launch configurations.
-mytodo-server = "toidone.server:main"
-mytodo-admin = "toidone.admin:main"
-mytodo = "toidone.cli:main"
-mytodo-mcp = "toidone.mcp_server:main"
+toidone-server = "throwtask.server:main"
+toidone-admin = "throwtask.admin:main"
+toidone = "throwtask.cli:main"
+toidone-mcp = "throwtask.mcp_server:main"
+mytodo-server = "throwtask.server:main"
+mytodo-admin = "throwtask.admin:main"
+mytodo = "throwtask.cli:main"
+mytodo-mcp = "throwtask.mcp_server:main"
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.12,<1"]
@@ -43,7 +47,7 @@ select = ["E", "F", "I", "UP"]
 
 [tool.ruff.lint.isort]
 known-third-party = ["mcp"]
-known-first-party = ["toidone"]
+known-first-party = ["throwtask", "toidone"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/toidone"]
+packages = ["src/throwtask", "src/toidone"]

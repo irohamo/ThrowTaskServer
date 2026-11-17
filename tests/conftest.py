@@ -1,9 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from toidone.config import read_credential
-from toidone.server import create_app
-from toidone.storage import Database, token_digest
+from throwtask.config import read_credential
+from throwtask.server import create_app
+from throwtask.storage import Database, token_digest
 
 
 @pytest.fixture

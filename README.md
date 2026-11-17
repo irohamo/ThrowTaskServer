@@ -1,8 +1,8 @@
-# ToiDone Server
+# ThrowTask Server
 
-[GitHub](https://github.com/irohamo/ToiDoneServer) · [CI](https://github.com/irohamo/ToiDoneServer/actions/workflows/test.yml)
+[GitHub](https://github.com/irohamo/ThrowTaskServer) · [CI](https://github.com/irohamo/ThrowTaskServer/actions/workflows/test.yml)
 
-**ToiDone（トイダン）**は、当為（なすべきこと）＋Done（完了）。なすべきことを、完了に。
+**ThrowTask（スロータスク）** — タスクを、気軽に投げ込む。
 
 個人利用向けのセルフホストToDo API、Debian CLI、MCPサーバーです。Python 3.12以上、FastAPI、SQLite、公式MCP Python SDKを使います。iOS/macOSアプリのソースは別管理です。
 
@@ -17,16 +17,16 @@
 
 ## セットアップ
 
-[uv](https://docs.astral.sh/uv/getting-started/installation/)とPython 3.12以上を用意し、このディレクトリで実行します。Debian 13のPython 3.13でも検証済みです。
+[uv](https://docs.astral.sh/uv/getting-started/installation/)とPython 3.12以上を用意し、このディレクトリで実行します。改名前の版はDebian 13のPython 3.13でも検証済みです。改名後の版の検証範囲は[記録](docs/verification.md)を参照してください。
 
 ```bash
-git clone https://github.com/irohamo/ToiDoneServer.git
-cd ToiDoneServer
+git clone https://github.com/irohamo/ThrowTaskServer.git
+cd ThrowTaskServer
 uv sync --frozen
-uv run toidone-admin --data-dir ./data init
+uv run throwtask-admin --data-dir ./data init
 mkdir -m 700 .secrets
-uv run toidone-admin --data-dir ./data token create debian --output .secrets/debian.credential
-uv run toidone-server --data-dir ./data
+uv run throwtask-admin --data-dir ./data token create debian --output .secrets/debian.credential
+uv run throwtask-server --data-dir ./data
 ```
 
 サーバーは標準で `127.0.0.1:8766` を待ち受けます。キーは指定した新規ファイルに0600で保存し、画面に出しません。キーと個人データをGitへ追加しないでください。
@@ -34,10 +34,10 @@ uv run toidone-server --data-dir ./data
 別のターミナルでCLIを設定します。設定ファイルには接続先と資格情報ファイルのパスを保存します。
 
 ```bash
-uv run toidone configure --url http://127.0.0.1:8766 --credential-file "$PWD/.secrets/debian.credential"
-uv run toidone --json auth status
-uv run toidone tasks create "最初のタスク" --when 2026-11-15 --json
-uv run toidone tasks list --json
+uv run throwtask configure --url http://127.0.0.1:8766 --credential-file "$PWD/.secrets/debian.credential"
+uv run throwtask --json auth status
+uv run throwtask tasks create "最初のタスク" --when 2026-11-15 --json
+uv run throwtask tasks list --json
 ```
 
 `--credential-file`を省くと、キーを隠し入力してmacOS Keychain / Linux Secret Serviceに保存します。headlessでは、明示的に指定した所有者限定の資格情報ファイルも利用できます。キーそのものをコマンド引数や環境変数で渡す機能はありません。
@@ -45,13 +45,13 @@ uv run toidone tasks list --json
 編集には取得した`revision`を指定します。次のIDは作成結果のUUIDに置き換えます。
 
 ```bash
-uv run toidone tasks get <uuid> --json
-uv run toidone tasks edit <uuid> --revision 1 --notes "メモ" --json
-uv run toidone tasks complete <uuid> --revision 2 --json
-uv run toidone tasks reopen <uuid> --revision 3 --json
-uv run toidone tasks delete <uuid> --revision 4 --dry-run --json
-uv run toidone tasks delete <uuid> --revision 4 --confirm --json
-uv run toidone tasks restore <uuid> --revision 5 --json
+uv run throwtask tasks get <uuid> --json
+uv run throwtask tasks edit <uuid> --revision 1 --notes "メモ" --json
+uv run throwtask tasks complete <uuid> --revision 2 --json
+uv run throwtask tasks reopen <uuid> --revision 3 --json
+uv run throwtask tasks delete <uuid> --revision 4 --dry-run --json
+uv run throwtask tasks delete <uuid> --revision 4 --confirm --json
+uv run throwtask tasks restore <uuid> --revision 5 --json
 ```
 
 CLIはJSON envelope v1を返します。exit 0は成功、1はAPI/認証/競合、2はローカル入力/設定エラーです。作成の結果が不明な場合はエラーの`recordId`を取得して確認します。書き込みと認証失敗を自動再試行しません。
@@ -61,16 +61,16 @@ CLIはJSON envelope v1を返します。exit 0は成功、1はAPI/認証/競合�
 同じ設定ファイルを使って起動します。
 
 ```bash
-uv run toidone-mcp
+uv run throwtask-mcp
 ```
 
-MCPクライアントの設定例です。`/absolute/path/ToiDoneServer`を実際の場所に置き換えます。キーは設定に含めません。
+MCPクライアントの設定例です。`/absolute/path/ThrowTaskServer`を実際の場所に置き換えます。キーは設定に含めません。
 
 ```json
 {
   "mcpServers": {
-    "toidone": {
-      "command": "/absolute/path/ToiDoneServer/.venv/bin/toidone-mcp",
+    "throwtask": {
+      "command": "/absolute/path/ThrowTaskServer/.venv/bin/throwtask-mcp",
       "args": []
     }
   }
@@ -93,17 +93,17 @@ uv run pytest -q
 
 [API契約](docs/api.md) · [Debianへの配置とバックアップ](docs/self-hosting.md) · [更新](docs/upgrading.md) · [MVPの進捗](docs/mvp.md)
 
-## MyToDoからの改名
+## ToiDoneからの改名
 
-パッケージは`toidone-server`、Python moduleは`toidone`、コマンドは`toidone`、
-`toidone-server`、`toidone-admin`、`toidone-mcp`です。旧`mytodo*`コマンドも互換aliasとして使えます。
-MCPクライアントの起動パスは上記のToiDoneServerの例に更新してください。
+2026-11-17に製品とリポジトリをThrowTaskへ変更しました。`v0.2.0`タグは改名前のToiDone版を指したままです。改名後のコードを使うには、[更新手順](docs/upgrading.md)に従いCI成功済みの改名後commitを指定します。
 
-新規環境のCLI設定は`~/.config/toidone/config.json`、サーバーデータは
-`~/.local/share/toidone-server/toidone.sqlite3`です。新しい既定パスがない場合は既存の
-`~/.config/mytodo/config.json`と`~/.local/share/mytodo-server`を使い、指定したdata-dirに
-`mytodo.sqlite3`があればそのDBを継続して開きます。既存のキー・失効状態・タスクを引き継ぎ、
-DBやWALを自動で移動しません。新旧両方がある場合は新名を優先します。
+パッケージは`throwtask-server`、Python moduleは`throwtask`、コマンドは`throwtask`、
+`throwtask-server`、`throwtask-admin`、`throwtask-mcp`です。旧`toidone*`と`mytodo*`の4コマンドずつも互換aliasとして使えます。旧`python -m toidone.cli`・`server`・`admin`・`mcp_server`と、共通client/config/storage等のimportも新実装へ委譲します。
 
-OS keyringも新名を優先し、キーが未登録の場合だけ旧`mytodo:`サービスを読み取ります。
-既存キーの形式とAPI v1の契約は継続します。`--config`と`--data-dir`の明示指定も利用できます。
+新規環境のCLI設定は`~/.config/throwtask/config.json`、サーバーデータは
+`~/.local/share/throwtask-server/throwtask.sqlite3`です。新しい既定パスがなければ、既存の`toidone`、`mytodo`の順で設定・保存先を探します。指定data-dir内のDBは`throwtask.sqlite3`、`toidone.sqlite3`、`mytodo.sqlite3`の順で既存ファイルを開きます。
+既存のキー・失効状態・タスク・revisionを保持し、DBやWALを自動で移動しません。新旧両方がある場合は新名を優先し、壊れた新設定やアクセスできないキーを旧コピーで隠しません。
+
+OS keyringも`throwtask:`サービスを優先し、未登録の場合だけ`toidone:`、`mytodo:`を読み取ります。既存キーの形式とAPI v1は継続します。`--config`と`--data-dir`の明示指定も使えます。
+
+既存systemd配置のアカウント・サービス名・パスは変更不要です。更新プログラムは従来の`toidone-server` / `mytodo-server`の起動パスと管理コマンドにも対応します。新規配置は[ThrowTask名のunit](deploy/throwtask-server.service)を使います。

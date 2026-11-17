@@ -6,4 +6,4 @@
 
 `--external-id`/`--source`で外部IDと作成元、`--state active|waiting|blocked`で状態を設定・絞り込みできます。`changes --since <UTC offset付き時刻>`で時刻以降の変更を取得します。[bot向けの例と更新規則](../docs/bots.md)を参照してください。
 
-[実装](../src/toidone/cli.py)を参照してください。`uv run toidone --help`で操作を確認できます。[セットアップ](../README.md)後に利用してください。
+[実装](../src/throwtask/cli.py)を参照してください。`uv run throwtask --help`で操作を確認できます。[セットアップ](../README.md)後に利用してください。

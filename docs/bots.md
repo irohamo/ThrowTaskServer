@@ -7,7 +7,7 @@
 CLIでは各項目と共通の繰り返しを指定できます。
 
 ```bash
-toidone tasks create "週次レビュー" --when 2026-11-16 \
+throwtask tasks create "週次レビュー" --when 2026-11-16 \
   --checklist-item "予定を確認" --checklist-item "次週を計画" \
   --repeat week --repeat-interval 1 --source briefing-bot --json
 ```
@@ -54,12 +54,12 @@ MCPの`create_task`の引数例です。`id`を事前に決めて保持すると
 
 ## 2. 外部IDと作成元
 
-`externalID`は外部対象の識別子、`source`は投入したbotの名前です。例えば外部IDを`github:irohamo/ToiDoneServer#42`、作成元を`github-bot`にします。メールIDにはアカウントやメールボックスの名前空間も含めます。APIキーや認証URLを入れません。
+`externalID`は外部対象の識別子、`source`は投入したbotの名前です。例えば外部IDを`github:irohamo/ThrowTaskServer#42`、作成元を`github-bot`にします。メールIDにはアカウントやメールボックスの名前空間も含めます。APIキーや認証URLを入れません。
 
 ```bash
-toidone tasks create "issue #42を確認" \
-  --external-id 'github:irohamo/ToiDoneServer#42' --source github-bot --json
-toidone tasks list --external-id 'github:irohamo/ToiDoneServer#42' --json
+throwtask tasks create "issue #42を確認" \
+  --external-id 'github:irohamo/ThrowTaskServer#42' --source github-bot --json
+throwtask tasks list --external-id 'github:irohamo/ThrowTaskServer#42' --json
 ```
 
 MCPでは`create_task`/`update_task`の`externalID`/`source`を使い、`list_tasks(external_id=..., source=...)`で完全一致検索します。事前の検索と同時に別botが登録しても、APIのトランザクションとDBの一意制約が二重作成を拒否します。
@@ -71,10 +71,10 @@ MCPでは`create_task`/`update_task`の`externalID`/`source`を使い、`list_ta
 `state`をactive（通常）、waiting（結果待ちなど）、blocked（依存作業などで着手できない）に分けます。省略時はactiveです。完了とSomedayは別フィールドで、待ち状態のまま完了・再開もできます。
 
 ```bash
-toidone tasks create "CAの結果待ち" --state waiting --source career-bot --json
-toidone tasks list --status open --state waiting --json
-toidone tasks list --status open --state active --json
-toidone tasks edit <uuid> --revision <observed-revision> --state active --json
+throwtask tasks create "CAの結果待ち" --state waiting --source career-bot --json
+throwtask tasks list --status open --state waiting --json
+throwtask tasks list --status open --state active --json
+throwtask tasks edit <uuid> --revision <observed-revision> --state active --json
 ```
 
 MCPでは`create_task(task={..., "state":"waiting"})`、`update_task(..., changes={"state":"blocked"})`、`list_tasks(status="open", state="active")`を使います。`status=open`だけでは待ち/ブロックも含みます。
@@ -84,7 +84,7 @@ MCPでは`create_task(task={..., "state":"waiting"})`、`update_task(..., change
 ## 4. 時刻以降の変更
 
 ```bash
-toidone changes --since '2026-11-16T00:00:00+09:00' --limit 100 --json
+throwtask changes --since '2026-11-16T00:00:00+09:00' --limit 100 --json
 ```
 
 MCPでは`list_changes`へ次の引数を渡します。
@@ -95,7 +95,7 @@ MCPでは`list_changes`へ次の引数を渡します。
 
 タスクとプロジェクトの作成・更新・削除・復元、繰り返し生成を変更順に返します。同じレコードの複数の変更も含みます。UTC offsetは必須で、指定時刻と同時の変更も含めます。`hasMore=true`なら同じ`since`を保って、返された`cursor`を`after`に指定します。
 
-朝のブリーフが全ページの処理に成功した後、最後の`cursor`を保存します。次回は`list_changes(after=<cursor>)`または`toidone changes --after <cursor>`にすると、前回処理済みの時刻境界の重複を避けられます。失敗した途中のcursorでチェックポイントを確定しません。サーバーの再作成やバックアップ復元では[snapshotからの再同期](api.md)を判断します。
+朝のブリーフが全ページの処理に成功した後、最後の`cursor`を保存します。次回は`list_changes(after=<cursor>)`または`throwtask changes --after <cursor>`にすると、前回処理済みの時刻境界の重複を避けられます。失敗した途中のcursorでチェックポイントを確定しません。サーバーの再作成やバックアップ復元では[snapshotからの再同期](api.md)を判断します。
 
 ## 既存環境への反映
 

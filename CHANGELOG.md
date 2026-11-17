@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — ThrowTaskへの改名（2026-11-17）
+
+- 製品・リポジトリ・Python package/module・CLI/MCP・新規systemd unitをThrowTask名へ変更。
+- 旧ToiDone / MyToDoコマンド、既存設定・DB・keyring、旧ToiDone Python起動方法を継続利用。
+- 更新プログラムが旧systemd配置を読み、旧管理コマンドでバックアップできるよう対応。
+- 既存DB・認証キー・API v1は変更しない。既存の`v0.2.0`タグはToiDone版の記録として保持する。
+
 ## 0.2.0 — 2026-11-16
 
 - CLIからチェックリストと繰り返しを設定するオプションを追加。

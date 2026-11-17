@@ -59,6 +59,14 @@ class Runner:
         return self.run(command, cwd=cwd, capture=True).decode().strip()
 
 
+def admin_executable(repo):
+    for name in ("throwtask-admin", "toidone-admin", "mytodo-admin"):
+        executable = repo / ".venv/bin" / name
+        if executable.is_file():
+            return executable
+    raise UpgradeError("INSTALLED_ADMIN_REQUIRED")
+
+
 def plan(args, runner):
     repo = args.repo.resolve()
     data = args.data_dir.resolve()
@@ -68,7 +76,9 @@ def plan(args, runner):
         raise UpgradeError("INVALID_SERVICE")
     if data.is_relative_to(repo):
         raise UpgradeError("DATA_MUST_BE_OUTSIDE_REPOSITORY")
-    if not any((data / name).is_file() for name in ("toidone.sqlite3", "mytodo.sqlite3")):
+    if not any(
+        (data / name).is_file() for name in ("throwtask.sqlite3", "toidone.sqlite3", "mytodo.sqlite3")
+    ):
         raise UpgradeError("EXISTING_DATABASE_REQUIRED")
     if runner.text(["git", "status", "--porcelain", "--untracked-files=all"], cwd=repo):
         raise UpgradeError("DIRTY_WORKTREE")
@@ -78,9 +88,8 @@ def plan(args, runner):
     )
     if not all(re.fullmatch(r"[0-9a-f]{40,64}", value) for value in (previous, target)):
         raise UpgradeError("INVALID_REVISION")
-    version = tomllib.loads(runner.text(["git", "show", target + ":pyproject.toml"], cwd=repo))["project"][
-        "version"
-    ]
+    project = tomllib.loads(runner.text(["git", "show", target + ":pyproject.toml"], cwd=repo))["project"]
+    version = project["version"]
     # Earlier releases do not report their version from health and need the manual recovery procedure.
     release = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:$|[-+.])", version)
     if previous != target and (release is None or tuple(map(int, release.groups())) < (0, 2, 0)):
@@ -94,7 +103,11 @@ def plan(args, runner):
     if (
         Path(service.get("WorkingDirectory", "/")).resolve() != repo
         or not argv
-        or Path(argv[0]).resolve() != (repo / ".venv/bin/toidone-server").resolve()
+        or Path(argv[0]).resolve()
+        not in {
+            (repo / ".venv/bin" / name).resolve()
+            for name in ("throwtask-server", "toidone-server", "mytodo-server")
+        }
         or "--data-dir" not in argv
         or argv.index("--data-dir") + 1 >= len(argv)
         or Path(argv[argv.index("--data-dir") + 1]).resolve() != data
@@ -109,13 +122,17 @@ def plan(args, runner):
         raise UpgradeError("SERVICE_CONFIGURATION_MISMATCH")
     if service.get("ActiveState") != "active":
         raise UpgradeError("SERVICE_MUST_BE_ACTIVE")
-    if not (repo / ".venv/bin/toidone-admin").is_file():
-        raise UpgradeError("INSTALLED_ADMIN_REQUIRED")
+    if Path(argv[0]).name not in project.get("scripts", {}):
+        raise UpgradeError("TARGET_COMMAND_UNSUPPORTED")
+    if (data / "throwtask.sqlite3").exists() and project["name"] != "throwtask-server":
+        raise UpgradeError("TARGET_LAYOUT_UNSUPPORTED")
+    installed_admin = admin_executable(repo)
     return {
         "repository": str(repo),
         "dataDir": str(data),
         "service": args.service,
         "user": service["User"],
+        "adminExecutable": str(installed_admin),
         "previousRevision": previous,
         "targetRevision": target,
         "targetVersion": version,
@@ -202,7 +219,7 @@ def apply(args, runner, selected):
                 "-u",
                 selected["user"],
                 "--",
-                repo / ".venv/bin/toidone-admin",
+                selected["adminExecutable"],
                 "--data-dir",
                 data,
                 "backup",
@@ -217,7 +234,7 @@ def apply(args, runner, selected):
     log = os.fdopen(os.open(state["logFile"], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb")
     runner.log = log
     try:
-        with tempfile.TemporaryDirectory(prefix="toidone-upgrade-") as directory:
+        with tempfile.TemporaryDirectory(prefix="throwtask-upgrade-") as directory:
             staging = Path(directory) / "source"
             staging.mkdir()
             archive = runner.run(["git", "archive", selected["targetRevision"]], cwd=repo, capture=True)
@@ -231,7 +248,7 @@ def apply(args, runner, selected):
             runner.run([staging / ".venv/bin/python", "-m", "pytest", "-q"], cwd=staging)
             preflight = backup("preflight")
             rehearsal = Path(directory) / "restored"
-            staged_admin = staging / ".venv/bin/toidone-admin"
+            staged_admin = admin_executable(staging)
             runner.run([staged_admin, "--data-dir", rehearsal, "restore", "--backup", preflight])
             runner.run([staged_admin, "--data-dir", rehearsal, "init"])
             if plan(args, runner) != selected:
@@ -250,7 +267,7 @@ def apply(args, runner, selected):
                     "-u",
                     selected["user"],
                     "--",
-                    repo / ".venv/bin/toidone-admin",
+                    admin_executable(repo),
                     "--data-dir",
                     data,
                     "init",
@@ -280,12 +297,20 @@ def apply(args, runner, selected):
     return state
 
 
+def installation_defaults():
+    # Existing systemd installations retain their service account, paths and database.
+    if not Path("/opt/throwtask-server").exists() and Path("/opt/toidone-server").exists():
+        return Path("/opt/toidone-server"), Path("/var/lib/toidone"), "toidone-server.service"
+    return Path("/opt/throwtask-server"), Path("/var/lib/throwtask"), "throwtask-server.service"
+
+
 def parser():
-    root = argparse.ArgumentParser(description="Plan or apply a pinned ToiDone Debian/systemd upgrade")
-    root.add_argument("--repo", type=Path, default=Path("/opt/toidone-server"))
-    root.add_argument("--data-dir", type=Path, default=Path("/var/lib/toidone"))
+    repo, data, service = installation_defaults()
+    root = argparse.ArgumentParser(description="Plan or apply a pinned ThrowTask Debian/systemd upgrade")
+    root.add_argument("--repo", type=Path, default=repo)
+    root.add_argument("--data-dir", type=Path, default=data)
     root.add_argument("--backup-dir", type=Path)
-    root.add_argument("--service", default="toidone-server.service")
+    root.add_argument("--service", default=service)
     root.add_argument(
         "--ref", required=True, help="Already fetched release tag or commit; never pulls or force-resets"
     )
@@ -313,6 +338,7 @@ def main(argv=None):
             if args.uv is None or not Path(args.python).is_file():
                 raise UpgradeError("RUNTIME_REQUIRED")
             git_dir = Path(runner.text(["git", "rev-parse", "--absolute-git-dir"], cwd=args.repo))
+            # Share the lock with the pre-rename helper to prevent concurrent upgrades.
             with (git_dir / "toidone-upgrade.lock").open("a") as lock:
                 try:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

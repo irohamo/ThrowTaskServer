@@ -467,7 +467,7 @@ wheels = [
 ]
 
 [[package]]
-name = "toidone-server"
+name = "throwtask-server"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [

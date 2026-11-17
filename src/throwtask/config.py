@@ -13,9 +13,13 @@ from .errors import TodoError
 
 
 def default_config() -> Path:
-    current = Path.home() / ".config/toidone/config.json"
-    legacy = Path.home() / ".config/mytodo/config.json"
-    return legacy if not current.exists() and legacy.exists() else current
+    current = Path.home() / ".config/throwtask/config.json"
+    candidates = (
+        current,
+        Path.home() / ".config/toidone/config.json",
+        Path.home() / ".config/mytodo/config.json",
+    )
+    return next((path for path in candidates if path.exists() or path.is_symlink()), current)
 
 
 def validate_token(value: str) -> str:
@@ -84,21 +88,26 @@ class Settings:
 
     @property
     def keyring_service(self):
-        return "toidone:" + hashlib.sha256(self.url.encode()).hexdigest()
+        return "throwtask:" + hashlib.sha256(self.url.encode()).hexdigest()
 
     @property
     def legacy_keyring_service(self):
         return "mytodo:" + hashlib.sha256(self.url.encode()).hexdigest()
+
+    @property
+    def legacy_keyring_services(self):
+        return ("toidone:" + hashlib.sha256(self.url.encode()).hexdigest(), self.legacy_keyring_service)
 
     def credential(self):
         if self.credential_file is not None:
             return read_credential(self.credential_file)
         try:
             backend = keyring_backend()
-            token = backend.get_password(self.keyring_service, "api")
-            if token is None:
-                token = backend.get_password(self.legacy_keyring_service, "api")
-            return validate_token(token or "")
+            for service in (self.keyring_service, *self.legacy_keyring_services):
+                token = backend.get_password(service, "api")
+                if token is not None:
+                    return validate_token(token)
+            raise TodoError("CREDENTIAL_UNAVAILABLE")
         except Exception:
             raise TodoError("CREDENTIAL_UNAVAILABLE") from None
 

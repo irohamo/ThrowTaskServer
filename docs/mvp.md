@@ -5,7 +5,7 @@
 ## 構成
 
 ```text
-ToiDoneアプリ -> アプリ用API adapter ----------------+
+ThrowTaskアプリ -> アプリ用API adapter ----------------+
 Debian CLI -> 共通API client -----------------------+-> ToDo API -> 永続ストア
 MCP client -> MCP adapter -> 共通API client ---------+
 ```
@@ -46,6 +46,6 @@ MCP client -> MCP adapter -> 共通API client ---------+
 ## 進捗
 
 - ローカルGitリポジトリとディレクトリ構成を作成。
-- API・CLI・MCPを実装。2026-11-16のToiDoneへの改名後、macOSとDebian実機で19件のテストに成功。
+- API・CLI・MCPを実装。2026-11-16の旧ToiDoneへの改名後、macOSとDebian実機で19件のテストに成功。
 - 別管理のアプリに接続設定と同期処理を実装。iPhone実機での受け入れは未通過。
-- GitHubリポジトリは[ToiDoneServer](https://github.com/irohamo/ToiDoneServer)として公開し、`main`で管理する。[検証済みと未検証の範囲](verification.md)を参照。
+- GitHubリポジトリは[ThrowTaskServer](https://github.com/irohamo/ThrowTaskServer)として公開し、`main`で管理する。[検証済みと未検証の範囲](verification.md)を参照。

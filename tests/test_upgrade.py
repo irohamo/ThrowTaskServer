@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from toidone import __version__
+from throwtask import __version__
 
 spec = importlib.util.spec_from_file_location("upgrade", Path(__file__).parents[1] / "deploy/upgrade.py")
 upgrade = importlib.util.module_from_spec(spec)
@@ -23,8 +23,9 @@ def git(repo, *arguments):
 
 
 class FakeRunner(upgrade.Runner):
-    def __init__(self, repo, data, *, fail=None):
+    def __init__(self, repo, data, *, fail=None, program_prefix="throwtask"):
         self.repo, self.data, self.fail = repo, data, fail
+        self.program_prefix = program_prefix
         self.calls = []
         self.active = True
 
@@ -38,8 +39,8 @@ class FakeRunner(upgrade.Runner):
             return (
                 f"ActiveState={'active' if self.active else 'inactive'}\n"
                 f"User={user}\nWorkingDirectory={self.repo}\n"
-                f"ExecStart={{ path={self.repo}/.venv/bin/toidone-server ; "
-                f"argv[]={self.repo}/.venv/bin/toidone-server --data-dir {self.data} "
+                f"ExecStart={{ path={self.repo}/.venv/bin/{self.program_prefix}-server ; "
+                f"argv[]={self.repo}/.venv/bin/{self.program_prefix}-server --data-dir {self.data} "
                 "--host 127.0.0.1 --port 8766 ; }"
             ).encode()
         if command[:2] == ["systemctl", "stop"]:
@@ -52,7 +53,7 @@ class FakeRunner(upgrade.Runner):
             return b"active" if self.active else b"inactive"
         elif "backup" in command:
             output = Path(command[command.index("--output") + 1])
-            source = sqlite3.connect(self.data / "toidone.sqlite3")
+            source = sqlite3.connect(next(path for path in self.data.glob("*.sqlite3") if path.is_file()))
             destination = sqlite3.connect(output)
             source.backup(destination)
             source.close()
@@ -60,8 +61,12 @@ class FakeRunner(upgrade.Runner):
         elif "restore" in command:
             if self.fail == "rehearsal":
                 raise upgrade.UpgradeError("COMMAND_FAILED")
-        elif "sync" in command and cwd == self.repo and self.fail == "sync":
-            raise upgrade.UpgradeError("COMMAND_FAILED")
+        elif "sync" in command:
+            if cwd == self.repo and self.fail == "sync":
+                raise upgrade.UpgradeError("COMMAND_FAILED")
+            installed = Path(cwd) / ".venv/bin"
+            installed.mkdir(parents=True, exist_ok=True)
+            (installed / "throwtask-admin").touch()
         return b""
 
 
@@ -75,17 +80,25 @@ def installation(tmp_path):
     git(repo, "config", "user.name", "Upgrade test")
     git(repo, "config", "user.email", "test@example.invalid")
     (repo / ".gitignore").write_text(".venv/\n")
-    (repo / "pyproject.toml").write_text('[project]\nname="toidone-server"\nversion="0.1.0"\n')
+
+    def project(version):
+        return (
+            '[project]\nname="throwtask-server"\nversion="' + version + '"\n'
+            '[project.scripts]\nthrowtask-server="throwtask.server:main"\n'
+            'toidone-server="throwtask.server:main"\nmytodo-server="throwtask.server:main"\n'
+        )
+
+    (repo / "pyproject.toml").write_text(project("0.1.0"))
     git(repo, "add", ".")
     git(repo, "commit", "-qm", "Old installation")
     previous = git(repo, "rev-parse", "HEAD")
-    (repo / "pyproject.toml").write_text('[project]\nname="toidone-server"\nversion="0.2.0"\n')
+    (repo / "pyproject.toml").write_text(project("0.2.0"))
     git(repo, "commit", "-qam", "New release")
     target = git(repo, "rev-parse", "HEAD")
     git(repo, "checkout", "--detach", previous)
     (repo / ".venv/bin").mkdir(parents=True)
-    (repo / ".venv/bin/toidone-admin").touch()
-    connection = sqlite3.connect(data / "toidone.sqlite3")
+    (repo / ".venv/bin/throwtask-admin").touch()
+    connection = sqlite3.connect(data / "throwtask.sqlite3")
     connection.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY, revision INTEGER)")
     connection.execute("INSERT INTO tasks VALUES ('keep', 7)")
     connection.commit()
@@ -168,7 +181,7 @@ def test_failure_after_stop_keeps_database_and_backups_without_automatic_restore
     assert state["phase"] == "failed" and state["previousRevision"] == previous
     assert state["serviceStopped"] is True and not runner.active
     assert Path(state["stoppedBackup"]).exists()
-    with sqlite3.connect(data / "toidone.sqlite3") as connection:
+    with sqlite3.connect(data / "throwtask.sqlite3") as connection:
         assert connection.execute("SELECT * FROM tasks").fetchall() == [("keep", 7)]
     for command, _ in runner.calls:
         if "restore" in command:
@@ -185,17 +198,55 @@ def test_rehearsal_failure_leaves_the_running_service_and_code_unchanged(install
     assert not any(command[:2] == ["systemctl", "stop"] for command, _ in runner.calls)
 
 
+@pytest.mark.parametrize("prefix", ["toidone", "mytodo"])
+def test_upgrade_preserves_legacy_database_and_service_commands(installation, monkeypatch, prefix):
+    args, repo, data, _, _ = installation
+    (data / "throwtask.sqlite3").rename(data / (prefix + ".sqlite3"))
+    (repo / ".venv/bin/throwtask-admin").rename(repo / (".venv/bin/" + prefix + "-admin"))
+    runner = FakeRunner(repo, data, program_prefix=prefix)
+    monkeypatch.setattr(upgrade, "check_health", lambda *args: None)
+    selected = upgrade.plan(args, runner)
+    assert Path(selected["adminExecutable"]).name == prefix + "-admin"
+    result = upgrade.apply(args, runner, selected)
+    assert result["phase"] == "complete" and runner.active
+    assert not (data / "throwtask.sqlite3").exists()
+    with sqlite3.connect(data / (prefix + ".sqlite3")) as connection:
+        assert connection.execute("SELECT * FROM tasks").fetchall() == [("keep", 7)]
+    backups = [command for command, _ in runner.calls if "backup" in command]
+    assert len(backups) == 2 and all(prefix + "-admin" in command[4] for command in backups)
+
+
+@pytest.mark.parametrize("missing_command", [True, False])
+def test_renamed_installation_rejects_incompatible_target_before_stop(installation, missing_command):
+    args, repo, data, previous, target = installation
+    git(repo, "checkout", "--detach", target)
+    metadata = (repo / "pyproject.toml").read_text()
+    if missing_command:
+        metadata = metadata.replace('throwtask-server="throwtask.server:main"\n', "")
+    else:
+        metadata = metadata.replace('name="throwtask-server"', 'name="toidone-server"')
+    (repo / "pyproject.toml").write_text(metadata)
+    git(repo, "commit", "-qam", "Incompatible target")
+    args.ref = git(repo, "rev-parse", "HEAD")
+    git(repo, "checkout", "--detach", previous)
+    runner = FakeRunner(repo, data)
+    expected = "TARGET_COMMAND_UNSUPPORTED" if missing_command else "TARGET_LAYOUT_UNSUPPORTED"
+    with pytest.raises(upgrade.UpgradeError, match=expected):
+        upgrade.plan(args, runner)
+    assert runner.active and not list((data / "backups").iterdir())
+
+
 @pytest.mark.parametrize("module", ["cli", "server", "admin", "mcp_server"])
 def test_version_commands_need_no_configuration(module, tmp_path):
     result = subprocess.run(
-        [sys.executable, "-m", "toidone." + module, "--version"],
+        [sys.executable, "-m", "throwtask." + module, "--version"],
         cwd=tmp_path,
         capture_output=True,
         text=True,
         timeout=15,
         env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[1] / "src")},
     )
-    assert result.returncode == 0 and result.stdout.strip() == "ToiDone " + __version__
+    assert result.returncode == 0 and result.stdout.strip() == "ThrowTask " + __version__
     assert result.stderr == ""
 
 
@@ -207,4 +258,4 @@ def test_api_and_packaging_versions_match(system):
     root = Path(__file__).parents[1]
     assert tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"] == __version__
     lock = tomllib.loads((root / "uv.lock").read_text())
-    assert next(p["version"] for p in lock["package"] if p["name"] == "toidone-server") == __version__
+    assert next(p["version"] for p in lock["package"] if p["name"] == "throwtask-server") == __version__
