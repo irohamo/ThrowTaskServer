@@ -1,6 +1,12 @@
 # バージョンアップ
 
-対象はThrowTaskServerのAPI・CLI・stdio MCPです。iOS/macOS/Watchアプリは別配布で、先にサーバーを対応版へ更新します。`v0.2.0`は改名前のToiDone版で、改名後のコードを含みません。ThrowTask版はCI成功済みの改名後commit SHAを指定します（改名後のreleaseタグは未作成）。タグが指すcommitの[Tests](https://github.com/irohamo/ThrowTaskServer/actions/workflows/test.yml)成功を確認してから進めます。
+対象はThrowTaskServerのAPI・CLI・stdio MCPです。iOS/macOS/Watchアプリは別配布で、先にサーバーを対応版へ更新します。`v0.2.0`は改名前のToiDone版で、改名後のコードを含みません。ThrowTask版は`v0.3.0`以降の公開タグ、またはCI成功済みの完全commit SHAを指定します。タグが指すcommitの[Tests](https://github.com/irohamo/ThrowTaskServer/actions/workflows/test.yml)成功を確認してから進めます。
+
+## ユーザー認証を追加する版への更新
+
+スキーマ1から2へ移行します。旧タスク・プロジェクト・APIキーをlegacy所有者へ紐づけ、既存キーは継続利用できます。`auth.json`なしではパスキーを無効にしてAPIキー接続を継続します。ドメイン設定と本人用`invite --claim-legacy`は[認証手順](authentication.md)を参照してください。
+
+**スキーマ2のDBを0.2.0以前へコードだけ差し戻すことはできません。** 旧版は起動時に拒否します。停止時バックアップを新しいdata-dirへ復元し、新版DBを保持して更新後の書き込みを別途照合します。更新プログラムは自動復元しません。
 
 ## Debianの常駐サーバー
 
@@ -9,7 +15,7 @@
 最初に公開済みのcommitを取得し、その版の更新プログラムだけを一時ディレクトリへ取り出します。**稼働中のcheckoutを先に切り替えないでください。** 現行のeditableインストールはソース変更の影響を受けます。
 
 ```bash
-upgrade_ref='<改名後のCI成功commitの完全SHA>'
+upgrade_ref='v0.3.0'
 upgrade_uv="$(command -v uv)"
 upgrade_directory="$(mktemp -d)"
 sudo git -C /opt/throwtask-server fetch --tags origin
@@ -119,7 +125,7 @@ ReadWritePaths=/var/lib/throwtask-rollback
 
 ## 別端末に入れたCLI/MCP
 
-`upgrade_ref`にはサーバーと同じ完全なcommit SHAを設定します。
+`upgrade_ref`にはサーバーと同じ検証済みタグ、または完全なcommit SHAを設定します。
 
 サーバーの後に、各端末のcheckoutを同じ検証済みcommitへ合わせます。未コミットの変更があれば先に保存し、設定・資格情報ファイルは残します。
 

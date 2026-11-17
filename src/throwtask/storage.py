@@ -10,6 +10,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from .errors import TodoError
+from .identity import ScopedConnection, legacy_owner, migrate, resolve
 from .models import ProjectCreate, ProjectFields, TaskCreate, TaskFields, parse_model
 from .recurrence import next_occurrence
 
@@ -52,7 +53,10 @@ class Database:
         os.close(fd)
         os.chmod(self.path, 0o600)
         with self.connect() as db:
-            if db.execute("PRAGMA user_version").fetchone()[0] not in (0, 1):
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version == 2:
+                return
+            if version not in (0, 1):
                 raise TodoError("UNSUPPORTED_SCHEMA")
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
@@ -77,10 +81,12 @@ class Database:
                     WHERE kind='task' AND json_extract(body,'$.externalID') IS NOT NULL;
                 PRAGMA user_version=1;
             """)
+            migrate(db)
 
     def connect(self):
-        db = sqlite3.connect(self.path, timeout=5, isolation_level=None)
+        db = sqlite3.connect(self.path, timeout=5, isolation_level=None, factory=ScopedConnection)
         db.row_factory = sqlite3.Row
+        db.execute("PRAGMA foreign_keys=ON")
         return db
 
     @contextmanager
@@ -89,11 +95,7 @@ class Database:
         try:
             db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             if digest is not None:
-                token = db.execute(
-                    "SELECT id,label FROM tokens WHERE digest=? AND revoked_at IS NULL", (digest,)
-                ).fetchone()
-                if token is None:
-                    raise TodoError("AUTHENTICATION_REQUIRED", 401)
+                resolve(db, digest, write=write)
             yield db
             db.commit()
         except BaseException:
@@ -102,7 +104,7 @@ class Database:
         finally:
             db.close()
 
-    def issue_token(self, label: str, output: Path) -> dict:
+    def issue_token(self, label: str, output: Path, *, owner_id=None, read_only=False) -> dict:
         if not label.strip() or len(label) > 100:
             raise TodoError("INVALID_LABEL")
         # A separate credential for each device can be revoked independently.
@@ -115,8 +117,13 @@ class Database:
                 stream.flush()
                 os.fsync(stream.fileno())
             with self.transaction(write=True) as db:
+                owner = owner_id or legacy_owner(db)
+                if db.execute("SELECT id FROM users WHERE id=?", (owner,)).fetchone() is None:
+                    raise TodoError("USER_NOT_FOUND", 404)
                 db.execute(
-                    "INSERT INTO tokens VALUES (?,?,?,?,NULL)", (token_id, label, token_digest(token), now())
+                    "INSERT INTO tokens(id,label,digest,created_at,revoked_at,owner_id,can_write) "
+                    "VALUES (?,?,?,?,NULL,?,?)",
+                    (token_id, label, token_digest(token), now(), owner, not read_only),
                 )
         except BaseException:
             output.unlink(missing_ok=True)
@@ -128,7 +135,8 @@ class Database:
             return [
                 dict(row)
                 for row in db.execute(
-                    "SELECT id,label,created_at AS createdAt,revoked_at AS revokedAt "
+                    "SELECT id,label,owner_id AS userID,can_write AS canWrite,created_at AS "
+                    "createdAt,revoked_at AS revokedAt "
                     "FROM tokens ORDER BY created_at"
                 )
             ]
@@ -142,8 +150,16 @@ class Database:
 
     def auth_status(self, digest):
         with self.transaction(digest) as db:
-            row = db.execute("SELECT id,label FROM tokens WHERE digest=?", (digest,)).fetchone()
-            return {"authenticated": True, **dict(row), "expiresAt": None}
+            principal = db.principal
+            return {
+                "authenticated": True,
+                "id": principal["id"],
+                "label": principal["label"],
+                "user": principal["user"],
+                "method": principal["method"],
+                "canWrite": bool(principal["can_write"]),
+                "expiresAt": principal["expiresAt"],
+            }
 
     @staticmethod
     def materialize(row):
@@ -159,7 +175,9 @@ class Database:
 
     @staticmethod
     def _row(db, kind, record_id, *, include_deleted=False):
-        row = db.execute("SELECT * FROM records WHERE kind=? AND id=?", (kind, record_id)).fetchone()
+        row = db.execute(
+            "SELECT * FROM records WHERE owner_id=? AND kind=? AND id=?", (db.owner_id, kind, record_id)
+        ).fetchone()
         if row is None or (row["deleted_at"] is not None and not include_deleted):
             raise TodoError("NOT_FOUND", 404)
         return row
@@ -171,8 +189,12 @@ class Database:
 
     def _emit(self, db, kind, record_id):
         record = self.materialize(self._row(db, kind, record_id, include_deleted=True))
+        cursor = db.execute(
+            "SELECT COALESCE(MAX(owner_seq),0)+1 FROM changes WHERE owner_id=?", (db.owner_id,)
+        ).fetchone()[0]
         db.execute(
-            "INSERT INTO changes(kind,record_id,record) VALUES (?,?,?)", (kind, record_id, encode(record))
+            "INSERT INTO changes(owner_id,owner_seq,kind,record_id,record) VALUES (?,?,?,?,?)",
+            (db.owner_id, cursor, kind, record_id, encode(record)),
         )
         return record
 
@@ -187,8 +209,9 @@ class Database:
     def _check_external_id(db, kind, body, record_id):
         if kind == "task" and body.get("externalID") is not None:
             existing = db.execute(
-                "SELECT id FROM records WHERE kind='task' AND json_extract(body,'$.externalID')=? AND id<>?",
-                (body["externalID"], record_id),
+                "SELECT id FROM records WHERE owner_id=? AND kind='task' AND "
+                "json_extract(body,'$.externalID')=? AND id<>?",
+                (db.owner_id, body["externalID"], record_id),
             ).fetchone()
             if existing is not None:
                 raise TodoError("EXTERNAL_ID_ALREADY_EXISTS", 409, existingRecordId=existing["id"])
@@ -199,7 +222,9 @@ class Database:
         record_id = body.pop("id")
         creation_fingerprint = fingerprint(body)
         with self.transaction(digest, write=True) as db:
-            existing = db.execute("SELECT * FROM records WHERE kind=? AND id=?", (kind, record_id)).fetchone()
+            existing = db.execute(
+                "SELECT * FROM records WHERE owner_id=? AND kind=? AND id=?", (db.owner_id, kind, record_id)
+            ).fetchone()
             if existing is not None:
                 if existing["fingerprint"] != creation_fingerprint or existing["deleted_at"] is not None:
                     raise TodoError("ID_ALREADY_EXISTS", 409, recordId=record_id)
@@ -208,8 +233,8 @@ class Database:
             self._check_external_id(db, kind, body, record_id)
             timestamp = now()
             db.execute(
-                "INSERT INTO records VALUES (?,?,1,?,?,?,NULL,?)",
-                (kind, record_id, encode(body), timestamp, timestamp, creation_fingerprint),
+                "INSERT INTO records VALUES (?,?,?,1,?,?,?,NULL,?)",
+                (db.owner_id, kind, record_id, encode(body), timestamp, timestamp, creation_fingerprint),
             )
             return self._emit(db, kind, record_id)
 
@@ -233,7 +258,10 @@ class Database:
         include_deleted=False,
     ):
         with self.transaction(digest) as db:
-            rows = db.execute("SELECT * FROM records WHERE kind=? AND id>? ORDER BY id", (kind, after))
+            rows = db.execute(
+                "SELECT * FROM records WHERE owner_id=? AND kind=? AND id>? ORDER BY id",
+                (db.owner_id, kind, after),
+            )
             items = []
             for row in rows:
                 record = self.materialize(row)
@@ -274,8 +302,9 @@ class Database:
             if encode(body) == row["body"]:
                 return self.materialize(row)
             db.execute(
-                "UPDATE records SET body=?,revision=revision+1,updated_at=? WHERE kind=? AND id=?",
-                (encode(body), now(), kind, record_id),
+                "UPDATE records SET body=?,revision=revision+1,updated_at=? WHERE "
+                "owner_id=? AND kind=? AND id=?",
+                (encode(body), now(), db.owner_id, kind, record_id),
             )
             result = self._emit(db, kind, record_id)
             if kind == "task" and body["isCompleted"] != json.loads(row["body"])["isCompleted"]:
@@ -283,7 +312,9 @@ class Database:
             return result
 
     def _transition_recurrence(self, db, record_id, body):
-        link = db.execute("SELECT * FROM recurrence_links WHERE parent_id=?", (record_id,)).fetchone()
+        link = db.execute(
+            "SELECT * FROM recurrence_links WHERE owner_id=? AND parent_id=?", (db.owner_id, record_id)
+        ).fetchone()
         if not body["isCompleted"]:
             if link is None:
                 return
@@ -292,19 +323,28 @@ class Database:
                 timestamp = now()
                 db.execute(
                     "UPDATE records SET deleted_at=?,updated_at=?,revision=revision+1 "
-                    "WHERE kind='task' AND id=?",
-                    (timestamp, timestamp, link["child_id"]),
+                    "WHERE owner_id=? AND kind='task' AND id=?",
+                    (timestamp, timestamp, db.owner_id, link["child_id"]),
                 )
                 self._emit(db, "task", link["child_id"])
-                db.execute("UPDATE recurrence_links SET undone=1 WHERE parent_id=?", (record_id,))
+                db.execute(
+                    "UPDATE recurrence_links SET undone=1 WHERE owner_id=? AND parent_id=?",
+                    (db.owner_id, record_id),
+                )
             return
         if link is not None and not link["undone"]:
             return
         if link is None:
             # Imported local histories may already contain the following occurrence.
-            for existing in db.execute("SELECT * FROM records WHERE kind='task' AND deleted_at IS NULL"):
+            for existing in db.execute(
+                "SELECT * FROM records WHERE owner_id=? AND kind='task' AND deleted_at IS NULL",
+                (db.owner_id,),
+            ):
                 if json.loads(existing["body"]).get("recurrenceParentID") == record_id:
-                    db.execute("INSERT INTO recurrence_links VALUES (?,?,0)", (record_id, existing["id"]))
+                    db.execute(
+                        "INSERT INTO recurrence_links VALUES (?,?,?,0)",
+                        (db.owner_id, record_id, existing["id"]),
+                    )
                     return
         try:
             today = datetime.now(ZoneInfo(body.get("deadlineTimeZone") or "UTC")).date()
@@ -319,13 +359,13 @@ class Database:
         timestamp = now()
         creation_fingerprint = fingerprint(following)
         db.execute(
-            "INSERT INTO records VALUES ('task',?,1,?,?,?,NULL,?)",
-            (child_id, encode(following), timestamp, timestamp, creation_fingerprint),
+            "INSERT INTO records VALUES (?,'task',?,1,?,?,?,NULL,?)",
+            (db.owner_id, child_id, encode(following), timestamp, timestamp, creation_fingerprint),
         )
         db.execute(
-            "INSERT INTO recurrence_links VALUES (?,?,0) ON CONFLICT(parent_id) "
+            "INSERT INTO recurrence_links VALUES (?,?,?,0) ON CONFLICT(owner_id,parent_id) "
             "DO UPDATE SET child_id=excluded.child_id,undone=0",
-            (record_id, child_id),
+            (db.owner_id, record_id, child_id),
         )
         self._emit(db, "task", child_id)
 
@@ -338,7 +378,8 @@ class Database:
                 detached = [
                     r["id"]
                     for r in db.execute(
-                        "SELECT id,body FROM records WHERE kind='task' AND deleted_at IS NULL"
+                        "SELECT id,body FROM records WHERE owner_id=? AND kind='task' AND deleted_at IS NULL",
+                        (db.owner_id,),
                     )
                     if json.loads(r["body"]).get("projectID") == record_id
                 ]
@@ -352,21 +393,23 @@ class Database:
             self._check_revision(row, revision)
             if kind == "project":
                 for task in db.execute(
-                    "SELECT * FROM records WHERE kind='task' AND deleted_at IS NULL"
+                    "SELECT * FROM records WHERE owner_id=? AND kind='task' AND deleted_at IS NULL",
+                    (db.owner_id,),
                 ).fetchall():
                     body = json.loads(task["body"])
                     if body.get("projectID") == record_id:
                         body["projectID"] = None
                         db.execute(
                             "UPDATE records SET body=?,revision=revision+1,updated_at=? "
-                            "WHERE kind='task' AND id=?",
-                            (encode(body), now(), task["id"]),
+                            "WHERE owner_id=? AND kind='task' AND id=?",
+                            (encode(body), now(), db.owner_id, task["id"]),
                         )
                         self._emit(db, "task", task["id"])
             timestamp = now()
             db.execute(
-                "UPDATE records SET deleted_at=?,updated_at=?,revision=revision+1 WHERE kind=? AND id=?",
-                (timestamp, timestamp, kind, record_id),
+                "UPDATE records SET deleted_at=?,updated_at=?,revision=revision+1 WHERE "
+                "owner_id=? AND kind=? AND id=?",
+                (timestamp, timestamp, db.owner_id, kind, record_id),
             )
             return self._emit(db, kind, record_id)
 
@@ -378,8 +421,9 @@ class Database:
                 return self.materialize(row)
             self._check_project(db, kind, json.loads(row["body"]))
             db.execute(
-                "UPDATE records SET deleted_at=NULL,updated_at=?,revision=revision+1 WHERE kind=? AND id=?",
-                (now(), kind, record_id),
+                "UPDATE records SET deleted_at=NULL,updated_at=?,revision=revision+1 WHERE "
+                "owner_id=? AND kind=? AND id=?",
+                (now(), db.owner_id, kind, record_id),
             )
             return self._emit(db, kind, record_id)
 
@@ -387,29 +431,36 @@ class Database:
         with self.transaction(digest) as db:
             records = [
                 self.materialize(row) | {"kind": row["kind"]}
-                for row in db.execute("SELECT * FROM records ORDER BY kind,id")
+                for row in db.execute(
+                    "SELECT * FROM records WHERE owner_id=? ORDER BY kind,id", (db.owner_id,)
+                )
             ]
-            cursor = db.execute("SELECT COALESCE(MAX(seq),0) FROM changes").fetchone()[0]
-            return {"records": records, "cursor": cursor}
+            cursor = db.execute(
+                "SELECT COALESCE(MAX(owner_seq),0) FROM changes WHERE owner_id=?", (db.owner_id,)
+            ).fetchone()[0]
+            return {"records": records, "cursor": cursor, "userID": db.owner_id}
 
     def changes(self, digest, after, limit, *, since=None):
         since_utc = (
             since.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z") if since else None
         )
         with self.transaction(digest) as db:
-            latest = db.execute("SELECT COALESCE(MAX(seq),0) FROM changes").fetchone()[0]
+            latest = db.execute(
+                "SELECT COALESCE(MAX(owner_seq),0) FROM changes WHERE owner_id=?", (db.owner_id,)
+            ).fetchone()[0]
             if after > latest:
                 raise TodoError("CURSOR_INVALID", 409)
             rows = db.execute(
-                "SELECT * FROM changes WHERE seq>? AND (? IS NULL OR json_extract(record,'$.updatedAt')>=?) "
-                "ORDER BY seq LIMIT ?",
-                (after, since_utc, since_utc, limit + 1),
+                "SELECT * FROM changes WHERE owner_id=? AND owner_seq>? AND (? IS NULL OR "
+                "json_extract(record,'$.updatedAt')>=?) "
+                "ORDER BY owner_seq LIMIT ?",
+                (db.owner_id, after, since_utc, since_utc, limit + 1),
             ).fetchall()
             page = rows[:limit]
             return {
                 "items": [
                     {
-                        "cursor": r["seq"],
+                        "cursor": r["owner_seq"],
                         "kind": r["kind"],
                         "record": {
                             **(TASK_DEFAULTS if r["kind"] == "task" else {}),
@@ -418,7 +469,7 @@ class Database:
                     }
                     for r in page
                 ],
-                "cursor": page[-1]["seq"] if len(rows) > limit else latest,
+                "cursor": page[-1]["owner_seq"] if len(rows) > limit else latest,
                 "hasMore": len(rows) > limit,
                 "latestCursor": latest,
             }
@@ -444,12 +495,31 @@ class Database:
             raise TodoError("RESTORE_TARGET_EXISTS")
         origin = sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True)
         try:
-            if origin.execute("PRAGMA user_version").fetchone()[0] != 1:
+            version = origin.execute("PRAGMA user_version").fetchone()[0]
+            if version not in (1, 2):
                 raise TodoError("UNSUPPORTED_SCHEMA")
             if origin.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 raise TodoError("INVALID_BACKUP")
             tables = {row[0] for row in origin.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if not {"tokens", "records", "changes"} <= tables:
+                raise TodoError("INVALID_BACKUP")
+            if (
+                version == 2
+                and not {
+                    "users",
+                    "recurrence_links",
+                    "auth_limits",
+                    "invitations",
+                    "challenges",
+                    "passkeys",
+                    "sessions",
+                    "used_refreshes",
+                    "recovery_codes",
+                }
+                <= tables
+            ):
+                raise TodoError("INVALID_BACKUP")
+            if origin.execute("PRAGMA foreign_key_check").fetchone() is not None:
                 raise TodoError("INVALID_BACKUP")
             self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)

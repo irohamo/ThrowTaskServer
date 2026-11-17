@@ -5,6 +5,7 @@ from uuid import UUID
 
 from . import __version__
 from .errors import TodoError, success
+from .passkeys import PasskeyService, PasskeySettings
 from .server import default_data_dir
 from .storage import Database
 
@@ -19,6 +20,8 @@ def main():
     create = token.add_parser("create")
     create.add_argument("label")
     create.add_argument("--output", type=Path, required=True, help="New owner-only credential file")
+    create.add_argument("--user", type=UUID)
+    create.add_argument("--read-only", action="store_true")
     token.add_parser("list")
     revoke = token.add_parser("revoke")
     revoke.add_argument("id", type=UUID)
@@ -26,6 +29,12 @@ def main():
     backup.add_argument("--output", type=Path, required=True)
     restore = commands.add_parser("restore")
     restore.add_argument("--backup", type=Path, required=True)
+    commands.add_parser("users")
+    invitations = commands.add_parser("invite")
+    invitations.add_argument("--output", type=Path, required=True, help="New owner-only invitation JSON file")
+    invitations.add_argument("--qr-output", type=Path)
+    invitations.add_argument("--claim-legacy", action="store_true")
+    invitations.add_argument("--lifetime", type=int, default=1800)
     args = parser.parse_args()
     try:
         database = Database(args.data_dir)
@@ -37,8 +46,25 @@ def main():
                 data = {"initialized": True}
             elif args.command == "backup":
                 data = database.backup(args.output)
+            elif args.command in {"invite", "users"}:
+                service = PasskeyService(database, PasskeySettings.load(database.path.parent / "auth.json"))
+                data = (
+                    service.users()
+                    if args.command == "users"
+                    else service.issue_invitation(
+                        args.output,
+                        claim_legacy=args.claim_legacy,
+                        qr_output=args.qr_output,
+                        lifetime=args.lifetime,
+                    )
+                )
             elif args.action == "create":
-                data = database.issue_token(args.label, args.output)
+                data = database.issue_token(
+                    args.label,
+                    args.output,
+                    owner_id=str(args.user) if args.user else None,
+                    read_only=args.read_only,
+                )
             elif args.action == "list":
                 data = database.list_tokens()
             else:

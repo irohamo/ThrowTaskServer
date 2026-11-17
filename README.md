@@ -7,7 +7,8 @@
 個人利用向けのセルフホストToDo API、Debian CLI、MCPサーバーです。Python 3.12以上、FastAPI、SQLite、公式MCP Python SDKを使います。iOS/macOSアプリのソースは別管理です。
 
 - タスク・プロジェクトのCRUD、完了/再開、検索、ページング。
-- 期限なし・手動失効可能な端末別APIキー。サーバーにはキーのハッシュを保存。
+- ユーザー別データ・招待登録・パスキーログイン・復旧コード。アプリのセッションとbotの個別APIキーを分離。[認証手順](docs/authentication.md)。
+- 期限なし・手動失効可能なユーザー別APIキー、読み取り専用キー。サーバーにはハッシュを保存。
 - revisionによる条件付き更新。削除プレビュー、論理削除、復元。
 - チェックリスト、タグ、予定日と締切、Someday、繰り返し。
 - bot用の外部ID重複防止・作成元、待ち/ブロック状態、時刻からの差分取得。[利用例](docs/bots.md)。
@@ -95,7 +96,7 @@ uv run pytest -q
 
 ## ToiDoneからの改名
 
-2026-11-17に製品とリポジトリをThrowTaskへ変更しました。`v0.2.0`タグは改名前のToiDone版を指したままです。改名後のコードを使うには、[更新手順](docs/upgrading.md)に従いCI成功済みの改名後commitを指定します。
+2026-11-17に製品とリポジトリをThrowTaskへ変更しました。`v0.2.0`タグは改名前のToiDone版を指したままです。改名とユーザー認証を含む版は`v0.3.0`です。[更新手順](docs/upgrading.md)に従い、対象タグのCI成功を確認して指定します。
 
 パッケージは`throwtask-server`、Python moduleは`throwtask`、コマンドは`throwtask`、
 `throwtask-server`、`throwtask-admin`、`throwtask-mcp`です。旧`toidone*`と`mytodo*`の4コマンドずつも互換aliasとして使えます。旧`python -m toidone.cli`・`server`・`admin`・`mcp_server`と、共通client/config/storage等のimportも新実装へ委譲します。

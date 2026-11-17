@@ -1,5 +1,18 @@
 # 検証記録
 
+## ユーザー・パスキー認証 — 2026-11-17 JST（0.3.0の公開前検証）
+
+- macOS / Python 3.12.13でpytest 79件成功、ruff check/format成功。実HTTP・CLI・stdio MCPの既存動作を含む。
+- ES256のソフトウェア認証器による実署名で登録・ログインを検証。origin/RP/UV/userHandle不一致、期限切れ・消費済みchallengeを拒否した。
+- legacy所有者の明示的な招待、招待JSON/QRの0600保存、秘密を含めない管理コマンド出力を確認した。
+- 同じUUID・外部IDを別ユーザーで扱えること、プロジェクト参照・削除・差分カーソルの分離、読み取り専用キーの変更拒否を確認した。
+- セッション期限、更新ローテーション・再利用時失効、ログアウト、復旧による旧パスキー/セッション失効、古い復旧challengeの無効化を確認した。
+- スキーマ1のDBを実際に作成して2へ移行し、UUID・revision・fingerprint・旧カーソル・繰り返しリンク・既存キー・backup/restoreを確認した。
+- 別管理アプリの6つのSwiftチェックと実HTTP同期が成功。アカウント別outboxの保持、別ユーザーへの送信停止、セッション更新/ログアウト、結果不明の更新後に自動再送しない動作を確認した。専用UserDefaultsと注入した秘密ストアだけを使い、利用者のKeychainは操作していない。
+- 別管理アプリはiOS Simulator・macOS向けビルド成功（署名なし）。APIのHTTPS IP/ポートとRPドメインを分ける設定を確認した。
+
+認証ドメインは未設定。AppleとのAssociated Domainsの成立、ネイティブパスキー・Face ID/iCloud Keychain、QRカメラ、実Keychainの画面操作、iPhone/Watch実機、Debianでの新依存の実測は未確認。この検証時点では稼働サーバーの更新・公開タグの作成は行っていない。[認証手順](authentication.md)。
+
 ## ThrowTaskへの改名 — 2026-11-17 JST
 
 - macOS / Python 3.12.13でpytest 64件成功。実HTTP、CLI、stdio MCPと、旧名の設定・DB・keyring探索順序・Python起動互換を確認。

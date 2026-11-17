@@ -1,6 +1,6 @@
 # API v1
 
-起点は`/v1`。`/docs`と`/openapi.json`には生成された契約があります。`/healthz`とAPI文書以外は`Authorization: Bearer <API key>`が必要です。APIキーをURLに含めません。
+起点は`/v1`。`/docs`と`/openapi.json`には生成された契約があります。データAPIには`Authorization: Bearer <API key or device access token>`が必要です。公開の登録・ログイン等は[認証手順](authentication.md)を参照してください。秘密をURLに含めません。
 
 成功: `{"version":1,"ok":true,"data":...}`。エラー: `{"version":1,"ok":false,"error":{"code":"..."}}`。入力エラーに入力値を含めません。
 
@@ -14,6 +14,8 @@
 | 一括取得・差分取得 | `GET /snapshot`、`GET /changes?after=0&limit=100` |
 | 認証確認 | `GET /auth/status` |
 
+スキーマ2ではタスク・プロジェクト・外部ID・snapshot・差分カーソルをユーザーごとに分離します。所有者は資格情報から決め、bodyやtool引数では指定しません。他ユーザーのUUIDは未存在として扱います。`auth/status`は`user`、`method=apiKey|session`、`canWrite`、`expiresAt`も返します。
+
 ## レコード
 
 公式CLI/MCPはUUIDを送信前に生成し、結果不明時にも同じUUIDを返します。HTTP APIはUUIDの省略も受け付けますが、独自クライアントでも送信前の生成を推奨します。
@@ -22,7 +24,7 @@
 
 タスクには`externalID`（nullable、前後空白を除く1〜500文字）、`source`（nullable、前後空白を除く1〜100文字）、`state=active|waiting|blocked`（既定active）もあります。既存DBのレコードはこれらがなくても読み込めます。`isCompleted`と`isSomeday`は状態とは独立しています。作成元は呼び出し側が付けるメタデータで、認証済みbotの証明には使いません。
 
-`externalID`は全タスクを通じて一意です。`github:owner/repo#42`や`mail:account:message-id`のように対象の名前空間を含めます。同じ外部対象を別botが作成しても409/`EXTERNAL_ID_ALREADY_EXISTS`と`existingRecordId`を返し、既存レコードを変更しません。更新時も同じ制約を適用し、削除済みタスクもIDを予約します。再使用する場合は既存レコードを確認し、復元するか、条件付きPATCHで外部IDを明示的に消去します。`source`だけ、または`externalID`だけの設定も可能です。
+`externalID`は各ユーザーの全タスクを通じて一意です。`github:owner/repo#42`や`mail:account:message-id`のように対象の名前空間を含めます。同じ外部対象を別botが作成しても409/`EXTERNAL_ID_ALREADY_EXISTS`と`existingRecordId`を返し、既存レコードを変更しません。更新時も同じ制約を適用し、削除済みタスクもIDを予約します。再使用する場合は既存レコードを確認し、復元するか、条件付きPATCHで外部IDを明示的に消去します。`source`だけ、または`externalID`だけの設定も可能です。
 
 全レコードに`id`、`revision`、`createdAt`、`updatedAt`、`deletedAt`を返します。日付のみは`YYYY-MM-DD`で保存し、UTC時刻へ変換しません。日時付き締切には日付・`HH:MM`・IANA time zoneを指定します。記録時刻はUTCです。
 
