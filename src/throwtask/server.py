@@ -14,7 +14,6 @@ from pydantic import AwareDatetime, ValidationError
 from starlette.exceptions import HTTPException
 
 from . import __version__
-from .auth_models import PasskeyProof, RecoveryStart, RefreshCredential, RegistrationStart
 from .errors import TodoError, success
 from .models import (
     ExternalID,
@@ -26,7 +25,6 @@ from .models import (
     TaskState,
     revision_from_header,
 )
-from .passkeys import PasskeyService, PasskeySettings
 from .storage import Database, token_digest
 
 
@@ -40,11 +38,8 @@ def default_data_dir() -> Path:
     return next((path for path in candidates if path.exists() or path.is_symlink()), current)
 
 
-def create_app(data_dir: Path | None = None, *, passkey_settings: PasskeySettings | None = None) -> FastAPI:
+def create_app(data_dir: Path | None = None) -> FastAPI:
     database = Database(data_dir or default_data_dir())
-    passkeys = PasskeyService(
-        database, passkey_settings or PasskeySettings.load(database.path.parent / "auth.json")
-    )
 
     @asynccontextmanager
     async def lifespan(app):
@@ -55,7 +50,7 @@ def create_app(data_dir: Path | None = None, *, passkey_settings: PasskeySetting
     bearer = HTTPBearer(auto_error=False)
 
     def authenticate(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]):
-        if credentials is None or not re.fullmatch(r"(?:mtd|tta)_[A-Za-z0-9_-]{43}", credentials.credentials):
+        if credentials is None or not re.fullmatch(r"mtd_[A-Za-z0-9_-]{43}", credentials.credentials):
             raise TodoError("AUTHENTICATION_REQUIRED", 401)
         digest = token_digest(credentials.credentials)
         database.auth_status(digest)
@@ -107,56 +102,9 @@ def create_app(data_dir: Path | None = None, *, passkey_settings: PasskeySetting
     def auth_status(auth: Auth):
         return success(database.auth_status(auth))
 
-    def auth_limit(request: Request, *, maximum=30):
-        address = request.client.host if request.client else "unknown"
-        passkeys.limit(address + ":" + request.url.path, maximum)
-
     @app.get("/v1/auth/config")
     def auth_configuration():
-        return success(passkeys.configuration())
-
-    @app.get("/.well-known/apple-app-site-association")
-    def associated_domains():
-        settings = passkeys.configured()
-        return {"webcredentials": {"apps": list(settings.apple_app_ids)}}
-
-    @app.post("/v1/auth/register/options")
-    def registration_options(payload: RegistrationStart, request: Request):
-        auth_limit(request)
-        return success(passkeys.registration_options(payload.invitation.get_secret_value(), payload.username))
-
-    @app.post("/v1/auth/register/verify")
-    def registration_verify(payload: PasskeyProof, request: Request):
-        auth_limit(request)
-        return success(passkeys.registration_verify(str(payload.challengeID), payload.credential))
-
-    @app.post("/v1/auth/login/options")
-    def login_options(request: Request):
-        auth_limit(request)
-        return success(passkeys.login_options())
-
-    @app.post("/v1/auth/login/verify")
-    def login_verify(payload: PasskeyProof, request: Request):
-        auth_limit(request)
-        return success(passkeys.login_verify(str(payload.challengeID), payload.credential))
-
-    @app.post("/v1/auth/session/refresh")
-    def session_refresh(payload: RefreshCredential, request: Request):
-        auth_limit(request)
-        return success(passkeys.refresh(payload.refreshToken.get_secret_value()))
-
-    @app.post("/v1/auth/session/logout")
-    def session_logout(payload: RefreshCredential):
-        return success(passkeys.logout(payload.refreshToken.get_secret_value()))
-
-    @app.post("/v1/auth/recovery/options")
-    def recovery_options(payload: RecoveryStart, request: Request):
-        auth_limit(request, maximum=10)
-        return success(passkeys.recovery_options(payload.username, payload.recoveryCode.get_secret_value()))
-
-    @app.post("/v1/auth/recovery-codes")
-    def recovery_codes(auth: Auth):
-        return success(passkeys.regenerate_codes(auth))
+        return success({"authenticationMethods": ["apiKey"], "passkeysEnabled": False, "rpID": None})
 
     @app.get("/v1/snapshot")
     def snapshot(auth: Auth):

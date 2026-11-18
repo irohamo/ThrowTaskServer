@@ -107,23 +107,9 @@ def resolve(db, digest, *, write=False):
     row = db.execute(
         "SELECT id,label,owner_id,can_write FROM tokens WHERE digest=? AND revoked_at IS NULL", (digest,)
     ).fetchone()
-    if row is not None:
-        principal = {**dict(row), "method": "apiKey", "expiresAt": None}
-    else:
-        row = db.execute(
-            "SELECT id,owner_id,access_expires_at FROM sessions WHERE access_digest=? "
-            "AND revoked_at IS NULL AND access_expires_at>?",
-            (digest, timestamp()),
-        ).fetchone()
-        if row is None:
-            raise TodoError("AUTHENTICATION_REQUIRED", 401)
-        principal = {
-            **dict(row),
-            "method": "session",
-            "label": "Passkey session",
-            "can_write": True,
-            "expiresAt": row["access_expires_at"],
-        }
+    if row is None:
+        raise TodoError("AUTHENTICATION_REQUIRED", 401)
+    principal = {**dict(row), "method": "apiKey", "expiresAt": None}
     user = db.execute(
         "SELECT id,username,is_legacy FROM users WHERE id=?", (principal["owner_id"],)
     ).fetchone()

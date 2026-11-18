@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 from contextlib import contextmanager
@@ -109,6 +110,27 @@ class Database:
             raise
         finally:
             db.close()
+
+    def create_user(self, username: str):
+        username = username.strip().lower()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,31}", username):
+            raise TodoError("INVALID_USERNAME", 422)
+        owner = str(uuid4())
+        with self.transaction(write=True) as db:
+            if db.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone():
+                raise TodoError("USERNAME_UNAVAILABLE", 409)
+            db.execute("INSERT INTO users VALUES (?,?,?,0)", (owner, username, now()))
+        return {"id": owner, "username": username, "isLegacy": False}
+
+    def list_users(self):
+        with self.transaction() as db:
+            return [
+                {**dict(row), "isLegacy": bool(row["isLegacy"])}
+                for row in db.execute(
+                    "SELECT id,username,is_legacy AS isLegacy,created_at AS createdAt FROM "
+                    "users ORDER BY created_at,id"
+                )
+            ]
 
     def issue_token(self, label: str, output: Path, *, owner_id=None, read_only=False) -> dict:
         if not label.strip() or len(label) > 100:

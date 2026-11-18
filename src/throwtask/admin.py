@@ -5,7 +5,6 @@ from uuid import UUID
 
 from . import __version__
 from .errors import TodoError, success
-from .passkeys import PasskeyService, PasskeySettings
 from .server import default_data_dir
 from .storage import Database
 
@@ -30,11 +29,9 @@ def main():
     restore = commands.add_parser("restore")
     restore.add_argument("--backup", type=Path, required=True)
     commands.add_parser("users")
-    invitations = commands.add_parser("invite")
-    invitations.add_argument("--output", type=Path, required=True, help="New owner-only invitation JSON file")
-    invitations.add_argument("--qr-output", type=Path)
-    invitations.add_argument("--claim-legacy", action="store_true")
-    invitations.add_argument("--lifetime", type=int, default=1800)
+    users = commands.add_parser("user").add_subparsers(dest="action", required=True)
+    user_create = users.add_parser("create")
+    user_create.add_argument("username")
     args = parser.parse_args()
     try:
         database = Database(args.data_dir)
@@ -46,18 +43,10 @@ def main():
                 data = {"initialized": True}
             elif args.command == "backup":
                 data = database.backup(args.output)
-            elif args.command in {"invite", "users"}:
-                service = PasskeyService(database, PasskeySettings.load(database.path.parent / "auth.json"))
-                data = (
-                    service.users()
-                    if args.command == "users"
-                    else service.issue_invitation(
-                        args.output,
-                        claim_legacy=args.claim_legacy,
-                        qr_output=args.qr_output,
-                        lifetime=args.lifetime,
-                    )
-                )
+            elif args.command == "users":
+                data = database.list_users()
+            elif args.command == "user":
+                data = database.create_user(args.username)
             elif args.action == "create":
                 data = database.issue_token(
                     args.label,

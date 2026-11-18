@@ -1,5 +1,7 @@
 # バージョンアップ
 
+0.5.0はAPIキー専用版です。既存のキーとDB schema 2を維持しますが、旧パスキー・招待・セッション・復旧のendpointは利用できません。アプリもAPIキー版へ更新し、必要な端末専用キーを発行してください。旧`auth.json`とAASA専用gatewayは不要になります。[認証と移行](authentication.md)。
+
 対象はThrowTaskServerのAPI・CLI・stdio MCPです。iOS/macOS/Watchアプリは別配布で、先にサーバーを対応版へ更新します。`v0.2.0`は改名前のToiDone版で、改名後のコードを含みません。ThrowTask版は`v0.3.0`以降の公開タグ、またはCI成功済みの完全commit SHAを指定します。タグが指すcommitの[Tests](https://github.com/irohamo/ThrowTaskServer/actions/workflows/test.yml)成功を確認してから進めます。
 
 ## ユーザー認証を追加する版への更新

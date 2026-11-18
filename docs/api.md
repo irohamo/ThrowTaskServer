@@ -1,5 +1,7 @@
 # API v1
 
+認証はAPIキーのみ。`GET /v1/auth/config`は`authenticationMethods=["apiKey"]`、`passkeysEnabled=false`、`rpID=null`を返します。旧登録・ログイン・セッション更新・復旧・AASAのendpointは0.5.0で削除しました。[管理手順](authentication.md)。
+
 起点は`/v1`。`/docs`と`/openapi.json`には生成された契約があります。データAPIには`Authorization: Bearer <API key or device access token>`が必要です。公開の登録・ログイン等は[認証手順](authentication.md)を参照してください。秘密をURLに含めません。
 
 成功: `{"version":1,"ok":true,"data":...}`。エラー: `{"version":1,"ok":false,"error":{"code":"..."}}`。入力エラーに入力値を含めません。
